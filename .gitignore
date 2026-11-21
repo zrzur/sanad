@@ -1,0 +1,38 @@
+# Secrets & local env
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Runtime data (guild config, levels, tickets, music sessions, PID)
+data/*
+!data/.gitkeep
+
+# Dependencies & caches
+node_modules/
+.npm/
+.cache/
+
+# Binaries (download yt-dlp yourself — see tools/README.md)
+tools/yt-dlp.exe
+tools/yt-dlp
+tools/yt-dlp_linux
+bin/
+
+# Logs & OS
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Open-source staging leftovers
+FORK_REPORT.md
+SANITIZATION_REPORT.md
