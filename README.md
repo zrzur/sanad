@@ -103,6 +103,7 @@ Never commit `.env`. Runtime data lives in `data/` (gitignored).
 | `/setup overview` | Feature overview |
 | `/play <Spotify or song>` | Music (needs voice + Spotify env) |
 | `/ticket panel` | Support ticket button |
+| `/webhook create` · `send` · `compose` | Full webhook manager (needs Manage Webhooks) |
 
 ---
 

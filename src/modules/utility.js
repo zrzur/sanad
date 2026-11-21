@@ -204,8 +204,8 @@ export function utilityCommands() {
         maxLength: 300,
         descriptions: { en: "Reminder text", ar: "التذكير" },
       }),
-    contextCommand("User", "User Info"),
-    contextCommand("Message", "Quote"),
+    contextCommand("User", "User Info", { en: "User Info", ar: "معلومات العضو" }),
+    contextCommand("Message", "Quote", { en: "Quote", ar: "اقتباس" }),
   ];
 }
 
@@ -255,7 +255,7 @@ export function registerUtility(client) {
       const avatar = await userAvatarUrl(client, user);
       const embed = baseEmbed(BRAND.colour.info)
         .title(user.display_name || user.username)
-        .field(tr("commands.serverinfo.id"), user._id, true)
+        .field(tr("commands.userinfo.id"), user._id, true)
         .field(tr("commands.userinfo.joined"), member?.joined_at?.slice(0, 19) || tr("common.none"), true)
         .field(tr("commands.userinfo.roles"), String(member?.roles?.length ?? 0), true);
       if (avatar) embed.icon(avatar);

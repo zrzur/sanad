@@ -6,19 +6,23 @@ import { formatDuration, modEmbed, parseDuration } from "../util/format.js";
 import { guildT } from "../util/locale.js";
 import { sendLog } from "../util/logs.js";
 
-async function record(client, i, { type, targetId, reason, extra, tr }) {
-  const { t: translate, locale } = tr ? { t: tr, locale: null } : guildT(i.serverId, i.locale);
-  const caseId = nextCase(i.serverId);
+/** Shared mod-case writer used by slash + prefix bridges. */
+export async function recordModCase(client, ctx, { type, targetId, reason, extra, tr, moderatorId }) {
+  const { t: translate, locale } = tr
+    ? { t: tr, locale: ctx.locale ?? null }
+    : guildT(ctx.serverId, ctx.locale);
+  const caseId = nextCase(ctx.serverId);
+  const modId = moderatorId || userId(ctx.user) || ctx.userId;
   const entry = {
     id: caseId,
     type,
     targetId,
-    moderatorId: userId(i.user),
+    moderatorId: modId,
     reason: reason || translate("common.none"),
     at: new Date().toISOString(),
     ...extra,
   };
-  addCase(i.serverId, entry);
+  addCase(ctx.serverId, entry);
   const embed = modEmbed({
     title: `${type} · #${caseId}`,
     targetId,
@@ -34,8 +38,12 @@ async function record(client, i, { type, targetId, reason, extra, tr }) {
           ? BRAND.colour.warning
           : BRAND.colour.info,
   });
-  await sendLog(client, i.serverId, embed, "mod");
+  await sendLog(client, ctx.serverId, embed, "mod");
   return { caseId, locale };
+}
+
+async function record(client, i, opts) {
+  return recordModCase(client, i, opts);
 }
 
 export function moderationCommands() {
@@ -103,8 +111,8 @@ export function moderationCommands() {
     new SlashCommandBuilder("unlock", "Unlock the channel")
       .describe({ en: "Unlock the channel", ar: "فتح القناة" })
       .permissions(Permissions.ManageChannel),
-    contextCommand("User", "Timeout 10m"),
-    contextCommand("User", "Kick"),
+    contextCommand("User", "Timeout 10m", { en: "Timeout 10m", ar: "إيقاف 10د" }),
+    contextCommand("User", "Kick", { en: "Kick", ar: "طرد" }),
   ];
 }
 

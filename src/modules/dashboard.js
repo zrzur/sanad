@@ -83,6 +83,7 @@ export async function buildDashboardEmbed(client, serverId, tr) {
       tr("commands.dashboard.features"),
       [
         featureLine(tr, "commands.setup.fields.welcome", cfg.welcome?.enabled),
+        featureLine(tr, "commands.setup.fields.goodbye", cfg.goodbye?.enabled),
         featureLine(tr, "commands.setup.fields.leveling", cfg.leveling?.enabled),
         featureLine(tr, "commands.setup.fields.automod", cfg.automod?.enabled),
         featureLine(tr, "commands.setup.fields.tickets", cfg.tickets?.enabled),
@@ -105,12 +106,13 @@ export function dashboardButtons(tr, cfg) {
   return [
     new ActionRowBuilder().addComponents(
       tog("sanad:dash:toggle:welcome", tr("commands.dashboard.btnWelcome"), cfg.welcome?.enabled),
+      tog("sanad:dash:toggle:goodbye", tr("commands.dashboard.btnGoodbye"), cfg.goodbye?.enabled),
       tog("sanad:dash:toggle:leveling", tr("commands.dashboard.btnLeveling"), cfg.leveling?.enabled),
       tog("sanad:dash:toggle:automod", tr("commands.dashboard.btnAutomod"), cfg.automod?.enabled),
       tog("sanad:dash:toggle:tickets", tr("commands.dashboard.btnTickets"), cfg.tickets?.enabled),
-      tog("sanad:dash:toggle:antiraid", tr("commands.dashboard.btnAntiraid"), cfg.antiraid?.enabled),
     ),
     new ActionRowBuilder().addComponents(
+      tog("sanad:dash:toggle:antiraid", tr("commands.dashboard.btnAntiraid"), cfg.antiraid?.enabled),
       tog("sanad:dash:toggle:starboard", tr("commands.dashboard.btnStarboard"), cfg.starboard?.enabled),
       new ButtonBuilder()
         .setCustomId("sanad:dash:refresh")
@@ -124,6 +126,8 @@ export function dashboardButtons(tr, cfg) {
         .setCustomId("sanad:dash:post-ticket")
         .setLabel(tr("commands.dashboard.btnPostTicket").slice(0, 80))
         .setStyle(ButtonStyle.Secondary),
+    ),
+    new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId("sanad:dash:end")
         .setLabel(tr("commands.dashboard.btnEnd").slice(0, 80))
@@ -144,6 +148,10 @@ async function renderDashboard(client, serverId, tr) {
 const TOGGLE_PATH = {
   welcome: (c) => {
     c.welcome.enabled = !c.welcome.enabled;
+  },
+  goodbye: (c) => {
+    if (!c.goodbye) c.goodbye = { enabled: false, channelId: null, message: null };
+    c.goodbye.enabled = !c.goodbye.enabled;
   },
   leveling: (c) => {
     c.leveling.enabled = !c.leveling.enabled;
@@ -229,8 +237,25 @@ export function registerDashboard(client) {
     const key = String(i.customId || "").replace("sanad:dash:toggle:", "");
     const fn = TOGGLE_PATH[key];
     if (!fn) return i.reply({ content: tr("common.error"), ephemeral: true });
+    const before = getGuild(i.serverId);
+    const turningOn =
+      (key === "welcome" && !before.welcome?.enabled) ||
+      (key === "goodbye" && !before.goodbye?.enabled) ||
+      (key === "starboard" && !before.starboard?.enabled);
     updateGuild(i.serverId, fn);
+    const after = getGuild(i.serverId);
+    let warn = null;
+    if (turningOn && key === "welcome" && after.welcome?.enabled && !after.welcome?.channelId) {
+      warn = tr("commands.dashboard.warnWelcomeChannel");
+    }
+    if (turningOn && key === "goodbye" && after.goodbye?.enabled && !after.goodbye?.channelId) {
+      warn = tr("commands.dashboard.warnGoodbyeChannel");
+    }
+    if (turningOn && key === "starboard" && after.starboard?.enabled && !after.starboard?.channelId) {
+      warn = tr("commands.dashboard.warnStarboardChannel");
+    }
     const payload = await renderDashboard(client, i.serverId, tr);
+    if (warn) payload.content = warn;
     try {
       await i.update(payload);
     } catch {
@@ -260,22 +285,8 @@ export function registerDashboard(client) {
     }
     await i.defer({ ephemeral: true });
     try {
-      await client.send(i.channelId, {
-        embeds: [
-          new EmbedBuilder()
-            .title(tr("commands.ticket.panelTitle"))
-            .description(tr("commands.ticket.panelBody"))
-            .colour(BRAND.colour.ticket),
-        ],
-        components: [
-          new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-              .setCustomId("sanad:ticket:open")
-              .setLabel(tr("commands.ticket.openBtn"))
-              .setStyle(ButtonStyle.Primary),
-          ),
-        ],
-      });
+      const { postTicketOpenPanel } = await import("./tickets.js");
+      await postTicketOpenPanel(client, i.channelId, tr);
       await i.editReply(tr("commands.ticket.panelPosted"));
     } catch (error) {
       console.warn("[sanad:dash:ticket]", error?.message || error);

@@ -1,7 +1,8 @@
 import { Permissions } from "@zrzur/sdk/bot";
-import { addCase, nextCase } from "../db/store.js";
+import { addWarn, clearWarns } from "../db/store.js";
 import { explain } from "../util/errors.js";
 import { formatDuration, parseDuration } from "../util/format.js";
+import { recordModCase } from "../modules/moderation.js";
 import { mentionUser } from "./context.js";
 import { registry } from "./registry.js";
 
@@ -24,18 +25,16 @@ export function registerPrefixBridges() {
       const target = parseUserArg(ctx.args[0]);
       const reason = ctx.args.slice(1).join(" ") || "";
       if (!target) return ctx.reply(ctx.t("common.error"));
+      if (target === ctx.userId) return ctx.reply(ctx.t("common.selfAction"));
       try {
         await ctx.client.members.ban(ctx.serverId, target, { reason });
-        const id = nextCase(ctx.serverId);
-        addCase(ctx.serverId, {
-          id,
+        const { caseId } = await recordModCase(ctx.client, ctx, {
           type: "ban",
           targetId: target,
-          moderatorId: ctx.userId,
-          reason: reason || "—",
-          at: new Date().toISOString(),
+          reason,
+          tr: ctx.t,
         });
-        return ctx.reply(ctx.t("commands.ban.done", { user: mentionUser(target), case: id }));
+        return ctx.reply(ctx.t("commands.ban.done", { user: mentionUser(target), case: caseId }));
       } catch (e) {
         return ctx.reply(explain(e, ctx.locale));
       }
@@ -51,18 +50,16 @@ export function registerPrefixBridges() {
       const target = parseUserArg(ctx.args[0]);
       const reason = ctx.args.slice(1).join(" ") || "";
       if (!target) return ctx.reply(ctx.t("common.error"));
+      if (target === ctx.userId) return ctx.reply(ctx.t("common.selfAction"));
       try {
         await ctx.client.members.kick(ctx.serverId, target);
-        const id = nextCase(ctx.serverId);
-        addCase(ctx.serverId, {
-          id,
+        const { caseId } = await recordModCase(ctx.client, ctx, {
           type: "kick",
           targetId: target,
-          moderatorId: ctx.userId,
           reason,
-          at: new Date().toISOString(),
+          tr: ctx.t,
         });
-        return ctx.reply(ctx.t("commands.kick.done", { user: mentionUser(target), case: id }));
+        return ctx.reply(ctx.t("commands.kick.done", { user: mentionUser(target), case: caseId }));
       } catch (e) {
         return ctx.reply(explain(e, ctx.locale));
       }
@@ -79,23 +76,22 @@ export function registerPrefixBridges() {
       const seconds = parseDuration(ctx.args[1]);
       const reason = ctx.args.slice(2).join(" ") || "";
       if (!target || !seconds) return ctx.reply(ctx.t("common.invalidDuration"));
+      if (target === ctx.userId) return ctx.reply(ctx.t("common.selfAction"));
       try {
         await ctx.client.members.timeout(ctx.serverId, target, seconds);
-        const id = nextCase(ctx.serverId);
-        addCase(ctx.serverId, {
-          id,
+        const duration = formatDuration(seconds, ctx.locale);
+        const { caseId } = await recordModCase(ctx.client, ctx, {
           type: "timeout",
           targetId: target,
-          moderatorId: ctx.userId,
           reason,
-          at: new Date().toISOString(),
-          duration: formatDuration(seconds, ctx.locale),
+          extra: { duration },
+          tr: ctx.t,
         });
         return ctx.reply(
           ctx.t("commands.timeout.done", {
             user: mentionUser(target),
-            duration: formatDuration(seconds, ctx.locale),
-            case: id,
+            duration,
+            case: caseId,
           }),
         );
       } catch (e) {
@@ -133,7 +129,9 @@ export function registerPrefixBridges() {
     aliases: ["إعداد"],
     permission: Permissions.ManageServer,
     async execute(ctx) {
-      return ctx.reply(ctx.t("commands.setup.useSlash"));
+      const { overviewEmbed } = await import("../modules/setup.js");
+      const { getGuild } = await import("../db/store.js");
+      return ctx.reply({ embeds: [overviewEmbed(getGuild(ctx.serverId), ctx.t)] });
     },
   });
 
@@ -206,10 +204,10 @@ export function registerPrefixBridges() {
     aliases: ["تحذير"],
     permission: Permissions.KickMembers,
     async execute(ctx) {
-      const { addWarn } = await import("../db/store.js");
       const target = parseUserArg(ctx.args[0]);
       const reason = ctx.args.slice(1).join(" ") || ctx.t("common.none");
       if (!target) return ctx.reply(ctx.t("common.error"));
+      if (target === ctx.userId) return ctx.reply(ctx.t("common.selfAction"));
       const warn = {
         id: Date.now().toString(36),
         reason,
@@ -217,21 +215,18 @@ export function registerPrefixBridges() {
         at: new Date().toISOString(),
       };
       const list = addWarn(ctx.serverId, target, warn);
-      const id = nextCase(ctx.serverId);
-      addCase(ctx.serverId, {
-        id,
+      const { caseId } = await recordModCase(ctx.client, ctx, {
         type: "warn",
         targetId: target,
-        moderatorId: ctx.userId,
         reason,
-        at: warn.at,
+        tr: ctx.t,
       });
       await ctx.client.users.sendDM(target, ctx.t("commands.warn.dm", { reason })).catch(() => {});
       return ctx.reply(
         ctx.t("commands.warn.done", {
           user: mentionUser(target),
           count: list.length,
-          case: id,
+          case: caseId,
           reason,
         }),
       );
@@ -246,9 +241,16 @@ export function registerPrefixBridges() {
     async execute(ctx) {
       const amount = Math.min(100, Math.max(1, Number(ctx.args[0]) || 0));
       if (!amount) return ctx.reply(ctx.t("common.error"));
+      const filterUser = parseUserArg(ctx.args[1]);
       try {
-        const msgs = await ctx.client.messages.fetchMany(ctx.channelId, { limit: amount });
-        const list = Array.isArray(msgs) ? msgs : msgs?.messages || [];
+        const fetchLimit = filterUser ? Math.min(100, Math.max(amount * 3, amount)) : amount;
+        const msgs = await ctx.client.messages.fetchMany(ctx.channelId, { limit: fetchLimit });
+        let list = Array.isArray(msgs) ? msgs : msgs?.messages || [];
+        if (filterUser) {
+          list = list
+            .filter((m) => String(m.author || m.author_id || "") === filterUser)
+            .slice(0, amount);
+        }
         const ids = list.map((m) => m.id || m._id).filter(Boolean);
         if (!ids.length) return ctx.reply(ctx.t("commands.purge.empty"));
         if (typeof ctx.client.messages.bulkDelete === "function") {
@@ -314,6 +316,242 @@ export function registerPrefixBridges() {
             .description(top.join("\n")),
         ],
       });
+    },
+  });
+
+  registry.register({
+    name: "unban",
+    slash: false,
+    aliases: ["فك"],
+    permission: Permissions.BanMembers,
+    async execute(ctx) {
+      const target = parseUserArg(ctx.args[0]) || ctx.args[0];
+      const reason = ctx.args.slice(1).join(" ") || "";
+      if (!target) return ctx.reply(ctx.t("common.error"));
+      try {
+        await ctx.client.members.unban(ctx.serverId, target);
+        const { caseId } = await recordModCase(ctx.client, ctx, {
+          type: "unban",
+          targetId: target,
+          reason,
+          tr: ctx.t,
+        });
+        return ctx.reply(ctx.t("commands.unban.done", { user: mentionUser(target), case: caseId }));
+      } catch (e) {
+        return ctx.reply(explain(e, ctx.locale));
+      }
+    },
+  });
+
+  registry.register({
+    name: "untimeout",
+    slash: false,
+    aliases: ["فككتم", "unmute"],
+    permission: Permissions.TimeoutMembers,
+    async execute(ctx) {
+      const target = parseUserArg(ctx.args[0]);
+      if (!target) return ctx.reply(ctx.t("common.error"));
+      try {
+        await ctx.client.members.timeout(ctx.serverId, target, 0);
+        return ctx.reply(ctx.t("commands.untimeout.done", { user: mentionUser(target) }));
+      } catch (e) {
+        return ctx.reply(explain(e, ctx.locale));
+      }
+    },
+  });
+
+  registry.register({
+    name: "warnings",
+    slash: false,
+    aliases: ["تحذيرات", "warns"],
+    permission: Permissions.KickMembers,
+    async execute(ctx) {
+      const { getWarns } = await import("../db/store.js");
+      const target = parseUserArg(ctx.args[0]) || ctx.userId;
+      const list = getWarns(ctx.serverId, target);
+      if (!list.length) return ctx.reply(ctx.t("commands.warnings.empty"));
+      const lines = list
+        .slice(-15)
+        .map((w, n) => `${n + 1}. ${w.reason} — <@${w.moderatorId}> · ${String(w.at).slice(0, 10)}`)
+        .join("\n");
+      return ctx.reply(ctx.t("commands.warnings.list", { user: mentionUser(target), lines }));
+    },
+  });
+
+  registry.register({
+    name: "clearwarns",
+    slash: false,
+    aliases: ["مسحتحذير"],
+    permission: Permissions.BanMembers,
+    async execute(ctx) {
+      const target = parseUserArg(ctx.args[0]);
+      if (!target) return ctx.reply(ctx.t("common.error"));
+      clearWarns(ctx.serverId, target);
+      return ctx.reply(ctx.t("commands.clearwarns.done", { user: mentionUser(target) }));
+    },
+  });
+
+  registry.register({
+    name: "cases",
+    slash: false,
+    aliases: ["قضايا"],
+    permission: Permissions.KickMembers,
+    async execute(ctx) {
+      const { listCases } = await import("../db/store.js");
+      const target = parseUserArg(ctx.args[0]);
+      const items = listCases(ctx.serverId, target, 12);
+      if (!items.length) return ctx.reply(ctx.t("commands.cases.empty"));
+      const lines = items
+        .map((c) => `#${c.id} · **${c.type}** · <@${c.targetId}> · ${String(c.reason || "").slice(0, 60)}`)
+        .join("\n");
+      return ctx.reply(lines);
+    },
+  });
+
+  registry.register({
+    name: "slowmode",
+    slash: false,
+    aliases: ["بطء"],
+    permission: Permissions.ManageChannel,
+    async execute(ctx) {
+      const seconds = Math.max(0, Math.min(21600, Number(ctx.args[0]) || 0));
+      try {
+        await ctx.client.channels.edit(ctx.channelId, { slowmode: seconds || null });
+        return ctx.reply(
+          seconds ? ctx.t("commands.slowmode.on", { seconds }) : ctx.t("commands.slowmode.off"),
+        );
+      } catch (e) {
+        return ctx.reply(explain(e, ctx.locale));
+      }
+    },
+  });
+
+  registry.register({
+    name: "softban",
+    slash: false,
+    aliases: ["حظرخفيف"],
+    permission: Permissions.BanMembers,
+    async execute(ctx) {
+      const target = parseUserArg(ctx.args[0]);
+      const reason = ctx.args.slice(1).join(" ") || "softban";
+      if (!target) return ctx.reply(ctx.t("common.error"));
+      if (target === ctx.userId) return ctx.reply(ctx.t("common.selfAction"));
+      try {
+        await ctx.client.members.ban(ctx.serverId, target, { reason: `softban: ${reason}` });
+        await ctx.client.members.unban(ctx.serverId, target);
+        const { caseId } = await recordModCase(ctx.client, ctx, {
+          type: "softban",
+          targetId: target,
+          reason,
+          tr: ctx.t,
+        });
+        return ctx.reply(ctx.t("commands.softban.done", { user: mentionUser(target), case: caseId }));
+      } catch (e) {
+        return ctx.reply(explain(e, ctx.locale));
+      }
+    },
+  });
+
+  registry.register({
+    name: "serverinfo",
+    slash: false,
+    aliases: ["سيرفر", "si"],
+    async execute(ctx) {
+      const { baseEmbed } = await import("../util/format.js");
+      const { BRAND } = await import("../brand.js");
+      try {
+        const server = await ctx.client.rest.get(`/servers/${ctx.serverId}`);
+        return ctx.reply({
+          embeds: [
+            baseEmbed(BRAND.colour.info)
+              .title(server.name)
+              .field(ctx.t("commands.serverinfo.id"), server._id, true)
+              .field(ctx.t("commands.serverinfo.owner"), mentionUser(server.owner), true)
+              .field(
+                ctx.t("commands.serverinfo.desc"),
+                (server.description || ctx.t("common.none")).slice(0, 500),
+                false,
+              ),
+          ],
+        });
+      } catch {
+        return ctx.reply(ctx.t("common.error"));
+      }
+    },
+  });
+
+  registry.register({
+    name: "userinfo",
+    slash: false,
+    aliases: ["عضو", "ui", "whois"],
+    async execute(ctx) {
+      const { baseEmbed } = await import("../util/format.js");
+      const { BRAND } = await import("../brand.js");
+      const { userAvatarUrl } = await import("../util/media.js");
+      const target = parseUserArg(ctx.args[0]) || ctx.userId;
+      try {
+        const user = await ctx.client.rest.get(`/users/${target}`);
+        const member = await ctx.client.rest
+          .get(`/servers/${ctx.serverId}/members/${target}`)
+          .catch(() => null);
+        const avatar = await userAvatarUrl(ctx.client, user);
+        const embed = baseEmbed(BRAND.colour.info)
+          .title(user.display_name || user.username)
+          .field(ctx.t("commands.userinfo.id"), user._id, true)
+          .field(
+            ctx.t("commands.userinfo.joined"),
+            member?.joined_at?.slice(0, 19) || ctx.t("common.none"),
+            true,
+          )
+          .field(ctx.t("commands.userinfo.roles"), String(member?.roles?.length ?? 0), true);
+        if (avatar) embed.icon(avatar);
+        return ctx.reply({ embeds: [embed] });
+      } catch {
+        return ctx.reply(ctx.t("common.error"));
+      }
+    },
+  });
+
+  registry.register({
+    name: "avatar",
+    slash: false,
+    aliases: ["افتار", "av", "pfp"],
+    async execute(ctx) {
+      const { baseEmbed } = await import("../util/format.js");
+      const { BRAND } = await import("../brand.js");
+      const { userAvatarUrl } = await import("../util/media.js");
+      const target = parseUserArg(ctx.args[0]) || ctx.userId;
+      try {
+        const user = await ctx.client.rest.get(`/users/${target}`);
+        const avatar = await userAvatarUrl(ctx.client, user);
+        if (!avatar) return ctx.reply(ctx.t("commands.avatar.none"));
+        const embed = baseEmbed(BRAND.colour.info)
+          .title(user.display_name || user.username)
+          .toJSON();
+        embed.image_url = avatar;
+        return ctx.reply({ embeds: [embed] });
+      } catch {
+        return ctx.reply(ctx.t("common.error"));
+      }
+    },
+  });
+
+  registry.register({
+    name: "say",
+    slash: false,
+    aliases: ["قل"],
+    permission: Permissions.ManageMessages,
+    async execute(ctx) {
+      const text = ctx.args.join(" ").trim();
+      if (!text) return ctx.reply(ctx.t("common.error"));
+      try {
+        if (ctx.message?.id) {
+          await ctx.client.messages.delete(ctx.channelId, ctx.message.id).catch(() => {});
+        }
+        return ctx.client.send(ctx.channelId, text.slice(0, 2000));
+      } catch (e) {
+        return ctx.reply(explain(e, ctx.locale));
+      }
     },
   });
 }

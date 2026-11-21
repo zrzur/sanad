@@ -97,7 +97,8 @@ export function defaultGuildConfig() {
       staffRoleId: null,
       logChannelId: null,
       counter: 0,
-      topics: ["General support", "Report", "Suggestion", "Other"],
+      // empty → locale-aware stock topics (en/ar)
+      topics: [],
     },
     suggest: { channelId: null },
     starboard: {
@@ -309,6 +310,14 @@ export function saveOpenTickets(serverId, map) {
   saveTickets();
 }
 
+/** Find which server owns an open ticket channel (in-memory). */
+export function findTicketServerByChannel(channelId) {
+  for (const [serverId, map] of Object.entries(ticketsDb)) {
+    if (map?.[channelId]) return serverId;
+  }
+  return null;
+}
+
 export function getGiveaways() {
   return giveawaysDb;
 }
@@ -327,4 +336,65 @@ export function setStarEntry(messageId, data) {
   if (data == null) delete starred[messageId];
   else starred[messageId] = data;
   saveStarred();
+}
+
+/* ─── Webhook token vault (Zrzur returns token only on create/regenerate) ─── */
+const webhookTokens = read("webhook-tokens", {});
+
+function saveWebhookTokens() {
+  scheduleWrite("webhook-tokens", webhookTokens);
+}
+
+export function getWebhookSecret(id) {
+  return webhookTokens[id]?.token || null;
+}
+
+export function saveWebhookSecret(id, { token, name, channelId, serverId, url } = {}) {
+  const prev = webhookTokens[id] || {};
+  webhookTokens[id] = {
+    token: token ?? prev.token ?? null,
+    name: name ?? prev.name ?? null,
+    channelId: channelId ?? prev.channelId ?? null,
+    serverId: serverId ?? prev.serverId ?? null,
+    url: url ?? prev.url ?? null,
+    savedAt: new Date().toISOString(),
+  };
+  saveWebhookTokens();
+  return webhookTokens[id];
+}
+
+export function deleteWebhookSecret(id) {
+  if (!webhookTokens[id]) return false;
+  delete webhookTokens[id];
+  saveWebhookTokens();
+  return true;
+}
+
+export function listSavedWebhooks(serverId) {
+  return Object.entries(webhookTokens)
+    .filter(([, row]) => !serverId || row.serverId === serverId)
+    .map(([id, row]) => ({ id, ...row }));
+}
+
+export function buildWebhookUrl(id, token) {
+  const base = String(process.env.ZRZUR_API_URL || "https://api.zrzur.com").replace(/\/$/, "");
+  return `${base}/webhooks/${id}/${token}`;
+}
+
+export function maskToken(token) {
+  const t = String(token || "");
+  if (t.length < 10) return "***";
+  return `${t.slice(0, 4)}…${t.slice(-4)}`;
+}
+
+/** Parse id+token from a full URL or `id/token` / bare id. */
+export function parseWebhookRef(input) {
+  const raw = String(input || "").trim();
+  if (!raw) return null;
+  const urlMatch = raw.match(/\/webhooks\/([0-9A-HJKMNP-TV-Z]{26})\/([^/\s?#]+)/i);
+  if (urlMatch) return { id: urlMatch[1], token: urlMatch[2] };
+  const slash = raw.match(/^([0-9A-HJKMNP-TV-Z]{26})\/(.+)$/i);
+  if (slash) return { id: slash[1], token: slash[2] };
+  if (/^[0-9A-HJKMNP-TV-Z]{26}$/i.test(raw)) return { id: raw, token: null };
+  return null;
 }

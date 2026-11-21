@@ -89,11 +89,17 @@ export function fromMessage(client, message, { command, args, rawArgs, serverId 
     isOwner: config.ownerIds.includes(uid),
     async reply(payload) {
       const data = typeof payload === "string" ? { content: payload } : payload;
+      // Prefix cannot be ephemeral — strip so panels don't claim privacy they lack
+      if (data && typeof data === "object") {
+        const { ephemeral: _e, ...rest } = data;
+        return client.send(message.channel, rest);
+      }
       return client.send(message.channel, data);
     },
     async defer() {},
+    // Replaced with real bits after permission resolve in the message handler
     has() {
-      return true;
+      return false;
     },
   };
 }

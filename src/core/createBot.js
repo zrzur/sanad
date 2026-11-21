@@ -10,6 +10,8 @@ import { registerTickets, ticketCommands } from "../modules/tickets.js";
 import { handleAutorespond, registerUtility, utilityCommands } from "../modules/utility.js";
 import { dashboardCommands, registerDashboard } from "../modules/dashboard.js";
 import { panelCommands, registerPanel } from "../modules/panel.js";
+import { gameCommands, registerGames } from "../modules/games.js";
+import { registerWebhooks, webhookCommands } from "../modules/webhooks.js";
 import { registerWelcome } from "../modules/welcome.js";
 import { makeT, t } from "./i18n.js";
 import { fromMessage } from "./context.js";
@@ -244,12 +246,156 @@ export function registerPlatformCommands(instanceManager) {
     },
   });
 
+  async function assertMusicDj(ctx) {
+    const { getQueue } = await import("../managers/music.js");
+    const { getUserVoiceChannel } = await import("../managers/voiceTracker.js");
+    const session = getQueue(ctx.client, ctx.serverId);
+    const inVoice = getUserVoiceChannel(ctx.client, ctx.userId) === session.channelId;
+    const isMod = typeof ctx.has === "function" && ctx.has(Permissions.ManageMessages);
+    if (session.channelId && !inVoice && !isMod && !ctx.isOwner) {
+      await ctx.reply({ content: ctx.t("commands.play.needDj"), ephemeral: true });
+      return null;
+    }
+    return session;
+  }
+
+  registry.register({
+    name: "pause",
+    aliases: ["كمل", "resume"],
+    async execute(ctx) {
+      if (!(await assertMusicDj(ctx))) return;
+      const { pause, getQueue, buildNowPlayingPayload } = await import("../managers/music.js");
+      const ok = pause(ctx.client, ctx.serverId);
+      if (!ok) return ctx.reply(ctx.t("commands.np.empty"));
+      const s = getQueue(ctx.client, ctx.serverId);
+      const payload = buildNowPlayingPayload(ctx.client, ctx.serverId);
+      if (payload) return ctx.reply(payload);
+      return ctx.reply(s.paused ? ctx.t("commands.play.paused") : ctx.t("commands.play.playing"));
+    },
+  });
+
+  registry.register({
+    name: "loop",
+    aliases: ["تكرار"],
+    async execute(ctx) {
+      if (!(await assertMusicDj(ctx))) return;
+      const { cycleLoop, buildNowPlayingPayload } = await import("../managers/music.js");
+      const mode = cycleLoop(ctx.client, ctx.serverId);
+      if (mode == null) return ctx.reply(ctx.t("commands.np.empty"));
+      const label =
+        mode === 1
+          ? ctx.t("commands.play.loopTrack")
+          : mode === 2
+            ? ctx.t("commands.play.loopQueue")
+            : ctx.t("commands.play.loopOff");
+      const payload = buildNowPlayingPayload(ctx.client, ctx.serverId);
+      if (payload) return ctx.reply({ ...payload, content: `${ctx.t("commands.play.loop")}: **${label}**` });
+      return ctx.reply(`${ctx.t("commands.play.loop")}: **${label}**`);
+    },
+  });
+
+  registry.register({
+    name: "shuffle",
+    aliases: ["خلط"],
+    async execute(ctx) {
+      if (!(await assertMusicDj(ctx))) return;
+      const { toggleShuffle, buildNowPlayingPayload } = await import("../managers/music.js");
+      const on = toggleShuffle(ctx.client, ctx.serverId);
+      if (on == null) return ctx.reply(ctx.t("commands.queue.empty"));
+      const payload = buildNowPlayingPayload(ctx.client, ctx.serverId);
+      const msg = on ? ctx.t("commands.play.shuffleOn") : ctx.t("commands.play.shuffleOff");
+      if (payload) return ctx.reply({ ...payload, content: msg });
+      return ctx.reply(msg);
+    },
+  });
+
+  registry.register({
+    name: "volume",
+    aliases: ["vol", "صوت"],
+    build: (b) =>
+      b.integer("level", t("en", "commands.volume.options.level"), {
+        min: 1,
+        max: 150,
+        descriptions: { ar: t("ar", "commands.volume.options.level") },
+      }),
+    async execute(ctx) {
+      if (!(await assertMusicDj(ctx))) return;
+      const { setVolume, getVolume, buildNowPlayingPayload } = await import("../managers/music.js");
+      const raw = ctx.option?.("level") ?? ctx.args[0];
+      if (raw == null || raw === "") {
+        return ctx.reply(ctx.t("commands.volume.current", { n: getVolume(ctx.client, ctx.serverId) }));
+      }
+      const n = setVolume(ctx.client, ctx.serverId, raw);
+      if (n == null) return ctx.reply(ctx.t("commands.np.empty"));
+      const payload = buildNowPlayingPayload(ctx.client, ctx.serverId);
+      const msg = ctx.t("commands.volume.set", { n });
+      if (payload) return ctx.reply({ ...payload, content: msg });
+      return ctx.reply(msg);
+    },
+  });
+
+  registry.register({
+    name: "remove",
+    aliases: ["rm", "حذف"],
+    build: (b) =>
+      b.integer("index", t("en", "commands.remove.options.index"), {
+        required: true,
+        min: 1,
+        max: 200,
+        descriptions: { ar: t("ar", "commands.remove.options.index") },
+      }),
+    async execute(ctx) {
+      if (!(await assertMusicDj(ctx))) return;
+      const { removeTrack, buildNowPlayingPayload } = await import("../managers/music.js");
+      const idx = Number(ctx.option?.("index") ?? ctx.args[0]);
+      const removed = removeTrack(ctx.client, ctx.serverId, idx);
+      if (!removed) return ctx.reply(ctx.t("commands.remove.invalid"));
+      const payload = buildNowPlayingPayload(ctx.client, ctx.serverId);
+      const msg = ctx.t("commands.remove.done", { title: removed.title || removed.display || "—" });
+      if (payload) return ctx.reply({ ...payload, content: msg });
+      return ctx.reply(msg);
+    },
+  });
+
+  registry.register({
+    name: "move",
+    aliases: ["نقل"],
+    build: (b) =>
+      b
+        .integer("from", t("en", "commands.move.options.from"), {
+          required: true,
+          min: 1,
+          max: 200,
+          descriptions: { ar: t("ar", "commands.move.options.from") },
+        })
+        .integer("to", t("en", "commands.move.options.to"), {
+          required: true,
+          min: 1,
+          max: 200,
+          descriptions: { ar: t("ar", "commands.move.options.to") },
+        }),
+    async execute(ctx) {
+      if (!(await assertMusicDj(ctx))) return;
+      const { moveTrack, buildNowPlayingPayload } = await import("../managers/music.js");
+      const from = Number(ctx.option?.("from") ?? ctx.args[0]);
+      const to = Number(ctx.option?.("to") ?? ctx.args[1]);
+      const ok = moveTrack(ctx.client, ctx.serverId, from, to);
+      if (!ok) return ctx.reply(ctx.t("commands.move.invalid"));
+      const payload = buildNowPlayingPayload(ctx.client, ctx.serverId);
+      const msg = ctx.t("commands.move.done", { from, to });
+      if (payload) return ctx.reply({ ...payload, content: msg });
+      return ctx.reply(msg);
+    },
+  });
+
   registry.register({
     name: "instance",
-    aliases: ["نسخة", "bot"],
+    aliases: ["نسخة", "bot", "bots", "instances"],
     ownerOnly: true,
     build: (b) =>
       b
+        .subcommand("manage", t("en", "commands.instance.manage"))
+        .subcommand("list", t("en", "commands.instance.list"))
         .subcommand("add", t("en", "commands.instance.add"), (s) =>
           s
             .string("token", t("en", "commands.instance.options.token"), {
@@ -259,50 +405,54 @@ export function registerPlatformCommands(instanceManager) {
             .string("label", t("en", "commands.instance.options.label"), { maxLength: 40 }),
         )
         .subcommand("remove", t("en", "commands.instance.remove"), (s) =>
-          s.string("id", t("en", "commands.instance.options.id"), { required: true }),
-        )
-        .subcommand("list", t("en", "commands.instance.list")),
+          s.string("id", t("en", "commands.instance.options.id"), { required: false }),
+        ),
     async execute(ctx) {
       if (!ctx.isOwner && !config.ownerIds.includes(ctx.userId)) {
         return ctx.reply({ content: ctx.t("commands.instance.ownerOnly"), ephemeral: true });
       }
-      const sub = ctx.interaction?.subcommand || ctx.args[0];
       if (!instanceManager) {
         return ctx.reply({ content: ctx.t("common.error"), ephemeral: true });
       }
 
-      if (sub === "list") {
-        const rows = instanceManager.list();
-        if (!rows.length) {
-          return ctx.reply({
-            content: `${ctx.t("commands.instance.empty")}\n${ctx.t("commands.instance.hint")}`,
-            ephemeral: true,
-          });
+      const { instancesPanelPayload } = await import("../modules/instancesPanel.js");
+      const subRaw = ctx.interaction?.subcommand || ctx.args[0] || "manage";
+      const sub = String(subRaw).toLowerCase();
+
+      // Default / manage / list / panel → interactive owner panel (no id typing)
+      if (
+        !sub ||
+        ["manage", "list", "panel", "لوحة", "ادارة", "إدارة"].includes(sub)
+      ) {
+        if (ctx.source === "prefix") {
+          return ctx.reply(ctx.t("commands.instance.prefixUseSlash"));
         }
-        const body = rows
-          .map((r) => `• **${r.label}** · \`${r.id}\` · ${r.username || "?"} · ${r.tokenMasked}`)
-          .join("\n");
-        return ctx.reply({
-          embeds: [
-            new EmbedBuilder()
-              .title(ctx.t("commands.instance.listTitle"))
-              .description(body)
-              .colour(config.brand.colour),
-          ],
-          ephemeral: true,
-        });
+        return ctx.reply(instancesPanelPayload(instanceManager, ctx.t));
       }
 
-      if (sub === "remove") {
+      if (sub === "remove" || sub === "stop" || sub === "حذف" || sub === "ايقاف" || sub === "إيقاف") {
         const id = ctx.option("id") || ctx.args[1];
+        if (!id) {
+          if (ctx.source === "prefix") {
+            return ctx.reply(ctx.t("commands.instance.needIdOrPanel"));
+          }
+          return ctx.reply(instancesPanelPayload(instanceManager, ctx.t));
+        }
+        const before = instanceManager.list().find((r) => r.id === id);
         const ok = await instanceManager.remove(id);
+        if (!ok) {
+          return ctx.reply({ content: ctx.t("commands.instance.notFound"), ephemeral: true });
+        }
         return ctx.reply({
-          content: ok ? ctx.t("commands.instance.removed", { id }) : ctx.t("commands.instance.notFound"),
+          content: ctx.t("commands.instance.removedNamed", {
+            name: before?.username || before?.label || id,
+            id,
+          }),
           ephemeral: true,
         });
       }
 
-      if (sub === "add") {
+      if (sub === "add" || sub === "اضافة" || sub === "إضافة") {
         const token = ctx.option("token") || ctx.args[1];
         const label = ctx.option("label") || ctx.args[2];
         if (!token) {
@@ -314,21 +464,41 @@ export function registerPlatformCommands(instanceManager) {
           /* ignore */
         }
         try {
-          const rec = await instanceManager.add(token, label);
+          const rec = await instanceManager.add(String(token).trim(), label);
+          if (ctx.source === "prefix") {
+            return ctx.reply(
+              ctx.t("commands.instance.added", {
+                label: rec.label,
+                username: rec.username,
+                id: rec.id,
+              }),
+            );
+          }
+          const panel = instancesPanelPayload(instanceManager, ctx.t);
           return ctx.reply({
             content: ctx.t("commands.instance.added", {
               label: rec.label,
               username: rec.username,
               id: rec.id,
             }),
+            embeds: panel.embeds,
+            components: panel.components,
             ephemeral: true,
           });
-        } catch {
+        } catch (error) {
+          console.error("[sanad:instance] add:", error?.message || error);
+          const msg = String(error?.message || error);
+          if (/Disallowed intents|DisallowedIntents/i.test(msg)) {
+            return ctx.reply({ content: ctx.t("commands.instance.intentsMissing"), ephemeral: true });
+          }
           return ctx.reply({ content: ctx.t("commands.instance.badToken"), ephemeral: true });
         }
       }
 
-      return ctx.reply({ content: ctx.t("commands.instance.hint"), ephemeral: true });
+      if (ctx.source === "prefix") {
+        return ctx.reply(ctx.t("commands.instance.prefixUseSlash"));
+      }
+      return ctx.reply(instancesPanelPayload(instanceManager, ctx.t));
     },
   });
 
@@ -384,9 +554,38 @@ export async function createBot({ token, label = "main", syncCommands = true, in
       },
     });
 
-  let client = makeClient(wantPrivileged ? privilegedIntents : freeIntents);
+  // Child bots often lack privileged intents — probe then fall back so /instance add works.
+  let intents = wantPrivileged ? privilegedIntents : freeIntents;
+  if (wantPrivileged) {
+    const probe = makeClient(privilegedIntents);
+    try {
+      await probe.login(token);
+      try {
+        probe.destroy();
+      } catch {
+        /* ignore */
+      }
+    } catch (error) {
+      try {
+        probe.destroy();
+      } catch {
+        /* ignore */
+      }
+      const msg = String(error?.message || error);
+      if (/Disallowed intents|DisallowedIntents/i.test(msg)) {
+        console.warn(
+          `[sanad:${label}] privileged intents not enabled on this bot — using Default. Enable Message Content + Server Members in Zrzur → My Bots for prefix/XP.`,
+        );
+        intents = freeIntents;
+      } else {
+        throw error;
+      }
+    }
+  }
 
-  client.__sanad = { label, isMain };
+  let client = makeClient(intents);
+
+  client.__sanad = { label, isMain, intentsMode: intents === privilegedIntents ? "privileged" : "default" };
 
   const { attachVoiceTracker } = await import("../managers/voiceTracker.js");
   attachVoiceTracker(client);
@@ -399,8 +598,15 @@ export async function createBot({ token, label = "main", syncCommands = true, in
   registerPanel(client);
   registerDashboard(client);
   registerUtility(client);
+  registerGames(client);
+  registerWebhooks(client);
   registerAntiRaid(client);
   registerStarboard(client);
+
+  if (isMain && instanceManager) {
+    const { registerInstancesPanel } = await import("../modules/instancesPanel.js");
+    registerInstancesPanel(client, instanceManager);
+  }
 
   const { registerMusicControls, restoreMusicSessions } = await import("../managers/music.js");
   registerMusicControls(client);
@@ -498,45 +704,19 @@ export async function createBot({ token, label = "main", syncCommands = true, in
     ctx.isOwner = config.ownerIds.includes(ctx.userId);
     ctx.isMainBot = isMain;
 
+    const { memberPermissionBits } = await import("../util/permissions.js");
+    const bits = ctx.isOwner ? ~0n : await memberPermissionBits(client, serverId, ctx.userId);
+    ctx.has = (perm) => ctx.isOwner || (bits & BigInt(perm)) === BigInt(perm);
+
     if (def.ownerOnly && !ctx.isOwner) {
       await ctx.reply(ctx.t("commands.instance.ownerOnly"));
       return;
     }
     if (def.permission != null) {
-      // Owner bypass only for instance; staff must still pass permission bits
       const ownerBypass = def.ownerOnly && ctx.isOwner;
-      if (!ownerBypass) {
-        let allowed = ctx.isOwner && def.name === "instance";
-        try {
-          const server = await client.rest.get(`/servers/${serverId}`);
-          // Server owner always allowed (check before role math)
-          if (server?.owner === ctx.userId) {
-            allowed = true;
-          } else {
-            const me = await client.rest.get(`/servers/${serverId}/members/${ctx.userId}`);
-            const member = me?.member ?? me;
-            const roleMap = server?.roles && typeof server.roles === "object" ? server.roles : {};
-            const mine = new Set(member?.roles || []);
-            const need = BigInt(def.permission);
-            // Zrzur Role.permissions is OverrideField { a, d } — not a flat number
-            let bits = BigInt(server?.default_permissions || 0);
-            for (const [roleId, role] of Object.entries(roleMap)) {
-              if (!mine.has(roleId) && !mine.has(role?._id) && !mine.has(role?.id)) continue;
-              const allow = role?.permissions?.a ?? role?.permissions ?? 0;
-              const deny = role?.permissions?.d ?? 0;
-              bits |= BigInt(allow || 0);
-              bits &= ~BigInt(deny || 0);
-            }
-            if ((bits & need) === need) allowed = true;
-          }
-        } catch (error) {
-          console.warn(`[sanad:${label}:perm]`, def.name, error?.message || error);
-          allowed = false;
-        }
-        if (!allowed) {
-          await ctx.reply(ctx.t("common.noPermission"));
-          return;
-        }
+      if (!ownerBypass && !ctx.has(def.permission)) {
+        await ctx.reply(ctx.t("common.noPermission"));
+        return;
       }
     }
     const wait = registry.checkCooldown(def, ctx.userId);
@@ -563,6 +743,8 @@ export async function createBot({ token, label = "main", syncCommands = true, in
       ...panelCommands(),
       ...dashboardCommands(),
       ...utilityCommands(),
+      ...gameCommands(),
+      ...webhookCommands(),
     ];
     const fromRegistry = registry.toSlashPayload().filter((c) => {
       const json = typeof c.toJSON === "function" ? c.toJSON() : c;

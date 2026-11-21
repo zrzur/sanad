@@ -65,11 +65,14 @@ function getSession(botId, serverId) {
       controlId: newControlId(),
       loopMode: 0,
       shuffle: false,
+      volume: 100,
       history: [],
       progressTimer: null,
     });
   }
-  return sessions.get(k);
+  const s = sessions.get(k);
+  if (s.volume == null) s.volume = 100;
+  return s;
 }
 
 function sleep(ms) {
@@ -144,6 +147,7 @@ function playerEmbed(session, tr) {
     .field(tr("commands.play.status"), status, true)
     .field(tr("commands.play.queueLeft"), String(session.queue.length), true)
     .field(tr("commands.play.loop"), loopLabel(session, tr), true)
+    .field(tr("commands.play.volume"), `${session.volume ?? 100}%`, true)
     .field(tr("commands.play.upNext"), queuePreview(session, tr), false)
     .colour(session.paused ? "#F59E0B" : config.brand.colour)
     .footer(tr("commands.play.controlsFooter"))
@@ -491,11 +495,91 @@ export function pause(client, serverId) {
     if (session.pausedAt) session.pausedTotalMs += Date.now() - session.pausedAt;
     session.pausedAt = 0;
     session.paused = false;
+    try {
+      session.ffmpeg?.proc?.stdout?.resume?.();
+    } catch {
+      /* ignore */
+    }
+    startProgressTicker(client, session);
   } else {
     session.paused = true;
     session.pausedAt = Date.now();
+    try {
+      session.ffmpeg?.proc?.stdout?.pause?.();
+    } catch {
+      /* ignore */
+    }
+    stopProgressTicker(session);
   }
+  persistSessions();
   return true;
+}
+
+/** Cycle loop: off → track → queue → off. Returns new mode 0/1/2. */
+export function cycleLoop(client, serverId) {
+  const session = getQueue(client, serverId);
+  if (!session.current) return null;
+  session.loopMode = (session.loopMode + 1) % 3;
+  persistSessions();
+  return session.loopMode;
+}
+
+/** Toggle shuffle; shuffles queue when enabling. Returns new boolean or null. */
+export function toggleShuffle(client, serverId) {
+  const session = getQueue(client, serverId);
+  if (!session.current && !session.queue.length) return null;
+  session.shuffle = !session.shuffle;
+  if (session.shuffle && session.queue.length > 1) shuffleInPlace(session.queue);
+  persistSessions();
+  return session.shuffle;
+}
+
+/** Remove queued track at 1-based index. Returns removed track or null. */
+export function removeTrack(client, serverId, index1) {
+  const session = getQueue(client, serverId);
+  const i = Math.floor(Number(index1)) - 1;
+  if (!Number.isFinite(i) || i < 0 || i >= session.queue.length) return null;
+  const [removed] = session.queue.splice(i, 1);
+  persistSessions();
+  return removed;
+}
+
+/** Move queued track from → to (1-based). Returns true on success. */
+export function moveTrack(client, serverId, from1, to1) {
+  const session = getQueue(client, serverId);
+  const from = Math.floor(Number(from1)) - 1;
+  const to = Math.floor(Number(to1)) - 1;
+  if (
+    !Number.isFinite(from) ||
+    !Number.isFinite(to) ||
+    from < 0 ||
+    to < 0 ||
+    from >= session.queue.length ||
+    to >= session.queue.length
+  ) {
+    return false;
+  }
+  const [item] = session.queue.splice(from, 1);
+  session.queue.splice(to, 0, item);
+  persistSessions();
+  return true;
+}
+
+/**
+ * Set playback volume 1–150 (%). Applies on next track (or immediately if seek-restart).
+ * Returns new volume or null if idle.
+ */
+export function setVolume(client, serverId, level) {
+  const session = getQueue(client, serverId);
+  if (!session.current && !session.queue.length) return null;
+  const n = Math.max(1, Math.min(150, Math.round(Number(level) || 100)));
+  session.volume = n;
+  persistSessions();
+  return n;
+}
+
+export function getVolume(client, serverId) {
+  return getQueue(client, serverId).volume ?? 100;
 }
 
 function ffmpegPath() {
@@ -667,7 +751,7 @@ function frameFromPcm(buf) {
   return samples;
 }
 
-function spawnFfmpegPcm(inputPathOrUrl) {
+function spawnFfmpegPcm(inputPathOrUrl, volumePercent = 100) {
   const ff = ffmpegPath();
   const args = ["-hide_banner", "-loglevel", "error"];
   if (/googlevideo\.com|youtube\.com|ytimg/i.test(String(inputPathOrUrl))) {
@@ -682,10 +766,13 @@ function spawnFfmpegPcm(inputPathOrUrl) {
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     );
   }
+  const vol = Math.max(0.01, Math.min(1.5, (Number(volumePercent) || 100) / 100));
   args.push(
     "-i",
     inputPathOrUrl,
     "-vn",
+    "-af",
+    `volume=${vol.toFixed(3)}`,
     "-acodec",
     "pcm_s16le",
     "-f",
@@ -873,7 +960,7 @@ async function startNext(client, serverId) {
     await upsertNowPlaying(client, session);
     startProgressTicker(client, session);
 
-    const stream = spawnFfmpegPcm(next.url);
+    const stream = spawnFfmpegPcm(next.url, session.volume ?? 100);
     session.ffmpeg = stream;
     await pumpPcm(session, stream);
   } catch (error) {

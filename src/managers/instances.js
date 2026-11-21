@@ -37,6 +37,10 @@ export function getInstanceRecords() {
   return read().items;
 }
 
+export function getInstanceRecord(id) {
+  return read().items.find((i) => i.id === id) || null;
+}
+
 export function addInstanceRecord({ label, token, botUserId, username }) {
   const data = read();
   const id = createHash("sha256").update(token).digest("hex").slice(0, 10);
@@ -47,11 +51,22 @@ export function addInstanceRecord({ label, token, botUserId, username }) {
     token,
     botUserId,
     username,
+    paused: false,
     createdAt: new Date().toISOString(),
     nonce: randomBytes(8).toString("hex"),
   });
   write(data);
   return data.items.find((i) => i.id === id);
+}
+
+export function updateInstanceRecord(id, patch) {
+  const data = read();
+  const item = data.items.find((i) => i.id === id);
+  if (!item) return null;
+  Object.assign(item, patch);
+  write(data);
+  const { token, ...rest } = item;
+  return { ...rest, tokenMasked: maskToken(token) };
 }
 
 export function removeInstanceRecord(id) {

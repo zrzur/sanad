@@ -163,6 +163,9 @@ export function setupCommands() {
           .channel("log", "Ticket log channel", {
             descriptions: { en: "Ticket log channel", ar: "قناة سجل التذاكر" },
           })
+          .channel("category", "Tickets category", {
+            descriptions: { en: "Tickets category", ar: "تصنيف التذاكر" },
+          })
           .string("topics", "Comma-separated topics", {
             descriptions: { en: "Comma-separated topics", ar: "المواضيع مفصولة بفاصلة" },
           }),
@@ -171,7 +174,7 @@ export function setupCommands() {
   ];
 }
 
-function overviewEmbed(cfg, tr) {
+export function overviewEmbed(cfg, tr) {
   const on = (v) => (v ? tr("common.enabled") : tr("common.disabled"));
   const dash = tr("common.none");
   return baseEmbed(BRAND.colour.primary, brandFooter(tr))
@@ -184,6 +187,7 @@ function overviewEmbed(cfg, tr) {
     )
     .field(tr("commands.setup.fields.staff"), cfg.staffRoleId ? mentionRole(cfg.staffRoleId) : dash, true)
     .field(tr("commands.setup.fields.welcome"), on(cfg.welcome.enabled), true)
+    .field(tr("commands.setup.fields.goodbye"), on(cfg.goodbye?.enabled), true)
     .field(tr("commands.setup.fields.leveling"), on(cfg.leveling.enabled), true)
     .field(tr("commands.setup.fields.automod"), on(cfg.automod.enabled), true)
     .field(tr("commands.setup.fields.tickets"), on(cfg.tickets.enabled), true)
@@ -365,12 +369,13 @@ export function registerSetup(client) {
           c.staffRoleId = i.option("staff");
         }
         if (i.option("log")) c.tickets.logChannelId = i.option("log");
+        if (i.option("category")) c.tickets.categoryId = i.option("category");
         if (i.option("topics")) {
           c.tickets.topics = String(i.option("topics"))
             .split(/[,،]/)
-            .map((t) => t.trim())
+            .map((topic) => topic.trim())
             .filter(Boolean)
-            .slice(0, 10);
+            .slice(0, 25);
         }
       });
       return i.reply({ content: tr("commands.config.ticketsSaved"), ephemeral: true });
