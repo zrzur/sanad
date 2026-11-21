@@ -2,7 +2,7 @@ import { ApiError } from "@zrzur/sdk/bot";
 import { mentionUser } from "../brand.js";
 import { getGuild } from "../db/store.js";
 import { fillTemplate } from "../util/format.js";
-import { guildT } from "../util/locale.js";
+import { guildT, localizedTemplate } from "../util/locale.js";
 
 async function serverMeta(client, serverId, tr) {
   let count = "?";
@@ -33,7 +33,7 @@ export function registerWelcome(client) {
     const { serverName, count } = await serverMeta(client, serverId, tr);
 
     if (cfg.welcome.enabled && cfg.welcome.channelId) {
-      const content = fillTemplate(cfg.welcome.message || tr("welcome.default"), {
+      const content = fillTemplate(localizedTemplate(cfg.welcome.message, tr, "welcome.default"), {
         user: mentionUser(userId),
         server: serverName,
         count,
@@ -72,7 +72,7 @@ export function registerWelcome(client) {
     if (!cfg.goodbye.enabled || !cfg.goodbye.channelId) return;
     const { t: tr } = guildT(serverId);
     const { serverName, count } = await serverMeta(client, serverId, tr);
-    const content = fillTemplate(cfg.goodbye.message || tr("welcome.goodbye"), {
+    const content = fillTemplate(localizedTemplate(cfg.goodbye.message, tr, "welcome.goodbye"), {
       user: mentionUser(userId),
       server: serverName,
       count,

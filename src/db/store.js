@@ -39,7 +39,8 @@ function write(name, data) {
 
 export function defaultGuildConfig() {
   return {
-    locale: "ar",
+    // New guilds follow SANAD_LOCALE; chat strings come from locales, not baked Arabic.
+    locale: process.env.SANAD_LOCALE === "en" ? "en" : process.env.SANAD_LOCALE === "ar" ? "ar" : "en",
     prefix: "!",
     logChannelId: null,
     modLogChannelId: null,
@@ -48,13 +49,15 @@ export function defaultGuildConfig() {
     welcome: {
       enabled: false,
       channelId: null,
-      message: "أهلاً وسهلاً {user} في **{server}**! أنت العضو رقم **{count}**.",
+      // null → use locale string (welcome.default)
+      message: null,
       dm: null,
     },
     goodbye: {
       enabled: false,
       channelId: null,
-      message: "وداعاً {user}… نتمنى لك التوفيق.",
+      // null → use locale string (welcome.goodbye)
+      message: null,
     },
     autorole: { roleIds: [] },
     automod: {
@@ -83,7 +86,8 @@ export function defaultGuildConfig() {
       xpMax: 25,
       cooldownSec: 60,
       levelUpChannelId: null,
-      levelUpMessage: "مبروك {user}! وصلت للمستوى **{level}**.",
+      // null → use locale string (leveling.levelUp)
+      levelUpMessage: null,
       rewards: [],
       ignoredChannels: [],
     },

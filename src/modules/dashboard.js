@@ -101,18 +101,17 @@ export function dashboardButtons(tr, cfg) {
       .setLabel(label.slice(0, 80))
       .setStyle(on ? ButtonStyle.Success : ButtonStyle.Secondary);
 
+  // Max 5 buttons per row — features then actions (End last)
   return [
     new ActionRowBuilder().addComponents(
       tog("sanad:dash:toggle:welcome", tr("commands.dashboard.btnWelcome"), cfg.welcome?.enabled),
       tog("sanad:dash:toggle:leveling", tr("commands.dashboard.btnLeveling"), cfg.leveling?.enabled),
       tog("sanad:dash:toggle:automod", tr("commands.dashboard.btnAutomod"), cfg.automod?.enabled),
-    ),
-    new ActionRowBuilder().addComponents(
       tog("sanad:dash:toggle:tickets", tr("commands.dashboard.btnTickets"), cfg.tickets?.enabled),
       tog("sanad:dash:toggle:antiraid", tr("commands.dashboard.btnAntiraid"), cfg.antiraid?.enabled),
-      tog("sanad:dash:toggle:starboard", tr("commands.dashboard.btnStarboard"), cfg.starboard?.enabled),
     ),
     new ActionRowBuilder().addComponents(
+      tog("sanad:dash:toggle:starboard", tr("commands.dashboard.btnStarboard"), cfg.starboard?.enabled),
       new ButtonBuilder()
         .setCustomId("sanad:dash:refresh")
         .setLabel(tr("commands.dashboard.btnRefresh").slice(0, 80))
@@ -125,6 +124,10 @@ export function dashboardButtons(tr, cfg) {
         .setCustomId("sanad:dash:post-ticket")
         .setLabel(tr("commands.dashboard.btnPostTicket").slice(0, 80))
         .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId("sanad:dash:end")
+        .setLabel(tr("commands.dashboard.btnEnd").slice(0, 80))
+        .setStyle(ButtonStyle.Danger),
     ),
   ];
 }
@@ -196,6 +199,27 @@ export function registerDashboard(client) {
   };
 
   client.component("sanad:dash:refresh", refresh);
+
+  client.component("sanad:dash:end", async (i) => {
+    const { t: tr } = guildT(i.serverId, i.locale);
+    if (!i.has(Permissions.ManageServer)) {
+      return i.reply({ content: tr("common.noPermission"), ephemeral: true });
+    }
+    const payload = {
+      embeds: [
+        baseEmbed(BRAND.colour.mute, brandFooter(tr))
+          .title(tr("commands.dashboard.title", { name: tr("brand.name") }))
+          .description(tr("commands.dashboard.closed")),
+      ],
+      components: [],
+    };
+    try {
+      if (i.deferred || i.replied) return i.editReply(payload);
+      return i.update(payload);
+    } catch {
+      return i.reply({ ...payload, ephemeral: true });
+    }
+  });
 
   client.component("sanad:dash:toggle:", async (i) => {
     const { t: tr } = guildT(i.serverId, i.locale);

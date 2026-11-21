@@ -66,8 +66,10 @@
       "btnAntiraid": "مكافحة غزو",
       "btnStarboard": "نجوم",
       "btnRefresh": "تحديث",
-      "btnPostPanel": "نشر لوحة الدليل",
-      "btnPostTicket": "نشر لوحة التذاكر"
+      "btnPostPanel": "لوحة الدليل",
+      "btnPostTicket": "لوحة التذاكر",
+      "btnEnd": "إنهاء",
+      "closed": "أُغلقت لوحة التحكم."
     },
     "panel": {
       "description": "نشر لوحة قواعد وتعريف السيرفر",
@@ -101,6 +103,8 @@
     "language": {
       "description": "لغة ردود البوت في هذا السيرفر",
       "options": { "locale": "اللغة" },
+      "current": "لغة السيرفر حالياً: **{locale}**. غيّرها بـ `language en` أو `language ar`.",
+      "badLocale": "استخدم `en` أو `ar`.",
       "updated": "لغة السيرفر الآن: **{locale}**"
     },
     "ban": {

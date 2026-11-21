@@ -60,9 +60,20 @@ export function registerPlatformCommands(instanceManager) {
         ],
       }),
     async execute(ctx) {
-      const locale = ctx.option("locale") || ctx.args[0] || "ar";
-      if (!["ar", "en"].includes(locale)) {
-        return ctx.reply({ content: ctx.t("common.error"), ephemeral: true });
+      const raw = String(ctx.option("locale") || ctx.args[0] || "")
+        .trim()
+        .toLowerCase();
+      // Prefix with no arg → show current language (do NOT force ar)
+      if (!raw) {
+        const current = getGuild(ctx.serverId).locale || config.defaultLocale || "en";
+        return ctx.reply({
+          content: ctx.t("commands.language.current", { locale: current }),
+          ephemeral: true,
+        });
+      }
+      const locale = raw.startsWith("ar") || raw === "عربي" || raw === "العربية" ? "ar" : raw.startsWith("en") || raw === "english" ? "en" : null;
+      if (!locale) {
+        return ctx.reply({ content: ctx.t("commands.language.badLocale"), ephemeral: true });
       }
       updateGuild(ctx.serverId, (g) => {
         g.locale = locale;
@@ -497,25 +508,29 @@ export async function createBot({ token, label = "main", syncCommands = true, in
       if (!ownerBypass) {
         let allowed = ctx.isOwner && def.name === "instance";
         try {
-          const me = await client.rest.get(`/servers/${serverId}/members/${ctx.userId}`);
-          const member = me?.member ?? me;
           const server = await client.rest.get(`/servers/${serverId}`);
-          const roles = server?.roles || [];
-          const mine = new Set(member?.roles || []);
-          const need = BigInt(def.permission);
-          for (const role of roles) {
-            if (!mine.has(role._id || role.id)) continue;
-            if ((BigInt(role.permissions || 0) & need) === need) {
-              allowed = true;
-              break;
+          // Server owner always allowed (check before role math)
+          if (server?.owner === ctx.userId) {
+            allowed = true;
+          } else {
+            const me = await client.rest.get(`/servers/${serverId}/members/${ctx.userId}`);
+            const member = me?.member ?? me;
+            const roleMap = server?.roles && typeof server.roles === "object" ? server.roles : {};
+            const mine = new Set(member?.roles || []);
+            const need = BigInt(def.permission);
+            // Zrzur Role.permissions is OverrideField { a, d } — not a flat number
+            let bits = BigInt(server?.default_permissions || 0);
+            for (const [roleId, role] of Object.entries(roleMap)) {
+              if (!mine.has(roleId) && !mine.has(role?._id) && !mine.has(role?.id)) continue;
+              const allow = role?.permissions?.a ?? role?.permissions ?? 0;
+              const deny = role?.permissions?.d ?? 0;
+              bits |= BigInt(allow || 0);
+              bits &= ~BigInt(deny || 0);
             }
+            if ((bits & need) === need) allowed = true;
           }
-          if ((BigInt(server?.default_permissions || 0) & need) === need) allowed = true;
-          // Server owner always allowed
-          if (server?.owner === ctx.userId) allowed = true;
         } catch (error) {
           console.warn(`[sanad:${label}:perm]`, def.name, error?.message || error);
-          // Fail closed — only server owner (checked above) or explicit instance owner bypass
           allowed = false;
         }
         if (!allowed) {

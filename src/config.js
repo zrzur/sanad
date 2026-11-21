@@ -21,7 +21,8 @@ export const config = {
     clientSecret: process.env.SPOTIFY_CLIENT_SECRET || "",
   },
   brand: {
-    name: "سند",
+    // Display name in chat comes from locales (brand.name). These are code fallbacks only.
+    name: "Sanad",
     nameEn: "Sanad",
     colour: "#E11D48",
   },

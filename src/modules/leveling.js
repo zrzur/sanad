@@ -3,7 +3,7 @@ import { BRAND, mentionUser, userId } from "../brand.js";
 import { t } from "../core/i18n.js";
 import { getGuild, getLevel, leaderboard, setLevel } from "../db/store.js";
 import { baseEmbed, brandFooter, levelFromXp, progressBar, xpForLevel } from "../util/format.js";
-import { guildT } from "../util/locale.js";
+import { guildT, localizedTemplate } from "../util/locale.js";
 import { userAvatarUrl } from "../util/media.js";
 
 export function levelingCommands() {
@@ -110,7 +110,7 @@ export async function handleLevelMessage(client, message) {
 
   if (data.level > prevLevel) {
     const { t: tr } = guildT(sid);
-    const text = (cfg.leveling.levelUpMessage || tr("leveling.levelUp"))
+    const text = localizedTemplate(cfg.leveling.levelUpMessage, tr, "leveling.levelUp")
       .replaceAll("{user}", mentionUser(uid))
       .replaceAll("{level}", String(data.level));
     const channelId = cfg.leveling.levelUpChannelId || message.channel;

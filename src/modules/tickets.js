@@ -56,7 +56,14 @@ function canManage(i, cfg, ticket) {
 }
 
 function topicsFor(cfg, locale) {
-  const list = cfg.tickets.topics?.length ? cfg.tickets.topics : defaultTopics(locale);
+  const stockAr = ["دعم عام", "تبليغ", "اقتراح", "أخرى"];
+  const list = cfg.tickets.topics?.length ? cfg.tickets.topics : null;
+  const isStockAr =
+    Array.isArray(list) &&
+    list.length === stockAr.length &&
+    list.every((topic, i) => topic === stockAr[i]);
+  // Stock Arabic topics must follow guild locale (en → English labels)
+  if (!list || isStockAr) return defaultTopics(locale).slice(0, 25);
   return list.slice(0, 25);
 }
 

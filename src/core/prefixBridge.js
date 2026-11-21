@@ -89,12 +89,12 @@ export function registerPrefixBridges() {
           moderatorId: ctx.userId,
           reason,
           at: new Date().toISOString(),
-          duration: formatDuration(seconds),
+          duration: formatDuration(seconds, ctx.locale),
         });
         return ctx.reply(
           ctx.t("commands.timeout.done", {
             user: mentionUser(target),
-            duration: formatDuration(seconds),
+            duration: formatDuration(seconds, ctx.locale),
             case: id,
           }),
         );

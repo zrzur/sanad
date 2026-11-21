@@ -66,8 +66,10 @@
       "btnAntiraid": "Anti-raid",
       "btnStarboard": "Starboard",
       "btnRefresh": "Refresh",
-      "btnPostPanel": "Post guide panel",
-      "btnPostTicket": "Post ticket panel"
+      "btnPostPanel": "Guide panel",
+      "btnPostTicket": "Ticket panel",
+      "btnEnd": "End",
+      "closed": "Control panel closed."
     },
     "panel": {
       "description": "Post server guidelines panel",
@@ -101,6 +103,8 @@
     "language": {
       "description": "Bot reply language for this server",
       "options": { "locale": "Language" },
+      "current": "Server language is **{locale}**. Change with `language en` or `language ar`.",
+      "badLocale": "Use `en` or `ar`.",
       "updated": "Server language is now **{locale}**"
     },
     "ban": {

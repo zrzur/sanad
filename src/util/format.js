@@ -34,7 +34,7 @@ export function parseDuration(input) {
 }
 
 /** Locale-aware duration: `ar` → ي/س/د/ث · else d/h/m/s */
-export function formatDuration(seconds, locale = "ar") {
+export function formatDuration(seconds, locale = "en") {
   const s = Math.max(0, Math.floor(seconds));
   const d = Math.floor(s / 86400);
   const h = Math.floor((s % 86400) / 3600);

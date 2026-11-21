@@ -12,3 +12,20 @@ export function guildT(serverId, _interactionLocale) {
   const locale = resolveLocale(guild?.locale || null, null);
   return { locale, t: makeT(locale) };
 }
+
+/** Old baked-in Arabic defaults — treat as unset so guild locale wins. */
+const STOCK_TEMPLATES = new Set([
+  "مبروك {user}! وصلت للمستوى **{level}**.",
+  "أهلاً وسهلاً {user} في **{server}**! أنت العضو رقم **{count}**.",
+  "وداعاً {user}… نتمنى لك التوفيق.",
+  "Congrats {user}! You reached level **{level}**.",
+  "Welcome {user} to **{server}**! You are member **#{count}**.",
+  "Goodbye {user}.",
+]);
+
+/** Prefer custom template only when it is a real custom string; else locale key. */
+export function localizedTemplate(custom, tr, key) {
+  const raw = custom == null ? "" : String(custom).trim();
+  if (!raw || STOCK_TEMPLATES.has(raw)) return tr(key);
+  return raw;
+}
