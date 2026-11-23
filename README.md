@@ -162,6 +162,7 @@ Child bots share Sanad features under their own username. Tokens are stored loca
 - Rotate any token that was ever pasted into chat, screenshots, or `.env.example`
 - Prefix moderation commands check permission bits (fail closed on API errors)
 - Music transport controls require Manage Messages **or** being in the bot’s voice channel
+- Found a security problem in Sanad? Report it privately, as described in [SECURITY.md](SECURITY.md).
 
 ---
 
@@ -172,6 +173,8 @@ Start with [docs/ZRZUR.md](docs/ZRZUR.md) — intents, components, voice, and a 
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). PRs that improve docs, i18n coverage, or Zrzur SDK patterns are especially welcome.
+
+This project follows the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ---
 

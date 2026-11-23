@@ -46,6 +46,11 @@ Prefer short, imperative messages:
 - `docs: clarify privileged intents in README`
 - `feat: add ignore_role to automod config`
 
+## Security and conduct
+
+- Security problems: do not open an issue. Follow [SECURITY.md](SECURITY.md).
+- This project follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+
 ## Questions
 
 Open a GitHub Issue on [zrzur/sanad](https://github.com/zrzur/sanad) or ask in the Zrzur community.
