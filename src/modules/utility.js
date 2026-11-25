@@ -14,6 +14,7 @@ import { getGiveaways, getGuild, setGiveaway, updateGuild } from "../db/store.js
 import { baseEmbed, brandFooter, parseDuration } from "../util/format.js";
 import { guildT } from "../util/locale.js";
 import { userAvatarUrl } from "../util/media.js";
+import { actorHas } from "../util/permissions.js";
 
 function fakeUlid() {
   const alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
@@ -460,7 +461,7 @@ export function registerUtility(client) {
 
   client.component("sanad:roles:pick", async (i) => {
     const { t: tr, locale } = guildT(i.serverId, i.locale);
-    if (!i.has(Permissions.AssignRoles, "app")) {
+    if (!actorHas(i, Permissions.AssignRoles, "app")) {
       return i.reply({ content: tr("commands.rolemenu.noPerm"), ephemeral: true });
     }
     await i.defer({ ephemeral: true });

@@ -2,6 +2,7 @@ import { Client, EmbedBuilder, Intents, Permissions } from "@zrzur/sdk/bot";
 import { config } from "../config.js";
 import { getGuild, updateGuild } from "../db/store.js";
 import { handleAutomod, registerAntiRaid } from "../modules/automod.js";
+import { automodPanelCommands, registerAutomodPanel } from "../modules/automodPanel.js";
 import { handleLevelMessage, levelingCommands, registerLeveling } from "../modules/leveling.js";
 import { moderationCommands, registerModeration } from "../modules/moderation.js";
 import { registerSetup, setupCommands } from "../modules/setup.js";
@@ -10,6 +11,7 @@ import { registerTickets, ticketCommands } from "../modules/tickets.js";
 import { handleAutorespond, registerUtility, utilityCommands } from "../modules/utility.js";
 import { dashboardCommands, registerDashboard } from "../modules/dashboard.js";
 import { panelCommands, registerPanel } from "../modules/panel.js";
+import { arcadeCommands, handleArcadeChat, registerArcade } from "../modules/arcade.js";
 import { gameCommands, registerGames } from "../modules/games.js";
 import { registerWebhooks, webhookCommands } from "../modules/webhooks.js";
 import { registerWelcome } from "../modules/welcome.js";
@@ -597,8 +599,10 @@ export async function createBot({ token, label = "main", syncCommands = true, in
   registerTickets(client);
   registerPanel(client);
   registerDashboard(client);
+  registerAutomodPanel(client);
   registerUtility(client);
   registerGames(client);
+  registerArcade(client);
   registerWebhooks(client);
   registerAntiRaid(client);
   registerStarboard(client);
@@ -644,7 +648,7 @@ export async function createBot({ token, label = "main", syncCommands = true, in
         isMainOwner: (id) => config.ownerIds.includes(id),
         isMainBot: isMain,
       });
-      if (def.permission != null && i.serverId && !i.has(def.permission)) {
+      if (def.permission != null && i.serverId && !ctx.has(def.permission)) {
         return i.reply({ content: ctx.t("common.noPermission"), ephemeral: true });
       }
       if (def.ownerOnly && !ctx.isOwner) {
@@ -657,6 +661,17 @@ export async function createBot({ token, label = "main", syncCommands = true, in
   }
 
   client.onMessage(async (message) => {
+    let content = String(message.content || message.body || "").trim();
+
+    // Arcade chat first (before automod/xp) so letters feel instant
+    if (content && (/^[a-zA-Z]+$/.test(content) || /^\d+$/.test(content))) {
+      try {
+        if (await handleArcadeChat(client, message)) return;
+      } catch (error) {
+        console.error(`[sanad:${label}:arcade-chat]`, error);
+      }
+    }
+
     // Only the main bot runs automod/xp/autorespond — avoids duplicate actions
     if (isMain) {
       const blocked = await handleAutomod(client, message);
@@ -665,7 +680,6 @@ export async function createBot({ token, label = "main", syncCommands = true, in
       await handleAutorespond(client, message);
     }
 
-    let content = String(message.content || message.body || "").trim();
     if (!content) return;
 
     const botId = client.user?.id || client.user?._id;
@@ -742,8 +756,10 @@ export async function createBot({ token, label = "main", syncCommands = true, in
       ...ticketCommands(),
       ...panelCommands(),
       ...dashboardCommands(),
+      ...automodPanelCommands(),
       ...utilityCommands(),
       ...gameCommands(),
+      ...arcadeCommands(),
       ...webhookCommands(),
     ];
     const fromRegistry = registry.toSlashPayload().filter((c) => {

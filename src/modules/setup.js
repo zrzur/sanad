@@ -88,8 +88,20 @@ export function setupCommands() {
         s
           .boolean("enabled", "Enable?", { required: true, descriptions: { en: "Enable?", ar: "تفعيل؟" } })
           .boolean("anti_spam", "Anti-spam", { descriptions: { en: "Anti-spam", ar: "مكافحة السبام" } })
+          .boolean("anti_duplicate", "Anti-duplicate", {
+            descriptions: { en: "Block repeated identical messages", ar: "حظر الرسائل المتكررة" },
+          })
           .boolean("anti_links", "Block links", { descriptions: { en: "Block links", ar: "حظر الروابط" } })
           .boolean("anti_invites", "Block invites", { descriptions: { en: "Block invites", ar: "حظر الدعوات" } })
+          .boolean("anti_emoji", "Anti emoji spam", {
+            descriptions: { en: "Block emoji spam", ar: "حظر سبام الإيموجي" },
+          })
+          .boolean("anti_zalgo", "Anti zalgo", {
+            descriptions: { en: "Block zalgo / spoof text", ar: "حظر النص المشوّه" },
+          })
+          .boolean("escalate", "Escalate strikes", {
+            descriptions: { en: "Delete → warn → timeout by strikes", ar: "تصعيد: حذف → تحذير → إيقاف" },
+          })
           .integer("max_mentions", "Max mentions", {
             min: 1,
             max: 20,
@@ -109,12 +121,21 @@ export function setupCommands() {
               { name: "Delete", value: "delete" },
               { name: "Warn", value: "warn" },
               { name: "Timeout", value: "timeout" },
+              { name: "Escalate", value: "escalate" },
             ],
           }),
       )
       .subcommand("automod-word", "Banned word", (s) =>
         s
           .string("word", "Word", { required: true, descriptions: { en: "Word", ar: "الكلمة" } })
+          .boolean("remove", "Remove", { descriptions: { en: "Remove", ar: "إزالة" } }),
+      )
+      .subcommand("automod-domain", "Allow domain", (s) =>
+        s
+          .string("domain", "Domain", {
+            required: true,
+            descriptions: { en: "e.g. zrzur.com", ar: "مثال: zrzur.com" },
+          })
           .boolean("remove", "Remove", { descriptions: { en: "Remove", ar: "إزالة" } }),
       )
       .subcommand("antiraid", "Anti-raid", (s) =>
@@ -129,6 +150,11 @@ export function setupCommands() {
             min: 3,
             max: 60,
             descriptions: { en: "Window seconds", ar: "النافذة بالثواني" },
+          })
+          .integer("lock_seconds", "Lock duration", {
+            min: 30,
+            max: 3600,
+            descriptions: { en: "Auto-unlock after lock (seconds)", ar: "فك القفل تلقائيًا بعد (ثواني)" },
           })
           .string("action", "Action", {
             descriptions: { en: "Action", ar: "الإجراء" },
@@ -306,12 +332,20 @@ export function registerSetup(client) {
 
     if (sub === "automod") {
       updateGuild(i.serverId, (c) => {
+        if (!c.automod) c.automod = {};
         c.automod.enabled = i.option("enabled");
         if (i.option("anti_spam") != null) c.automod.antiSpam = i.option("anti_spam");
+        if (i.option("anti_duplicate") != null) c.automod.antiDuplicate = i.option("anti_duplicate");
         if (i.option("anti_links") != null) c.automod.antiLinks = i.option("anti_links");
         if (i.option("anti_invites") != null) c.automod.antiInvites = i.option("anti_invites");
+        if (i.option("anti_emoji") != null) c.automod.antiEmojiSpam = i.option("anti_emoji");
+        if (i.option("anti_zalgo") != null) c.automod.antiZalgo = i.option("anti_zalgo");
+        if (i.option("escalate") != null) c.automod.escalate = i.option("escalate");
         if (i.option("max_mentions") != null) c.automod.maxMentions = i.option("max_mentions");
-        if (i.option("action")) c.automod.action = i.option("action");
+        if (i.option("action")) {
+          c.automod.action = i.option("action");
+          if (i.option("action") === "escalate") c.automod.escalate = true;
+        }
         if (i.option("timeout_seconds") != null) c.automod.timeoutSeconds = i.option("timeout_seconds");
         const ignoreRole = i.option("ignore_role");
         if (ignoreRole) {
@@ -325,17 +359,43 @@ export function registerSetup(client) {
     if (sub === "automod-word") {
       const word = String(i.option("word")).toLowerCase().trim();
       updateGuild(i.serverId, (c) => {
+        if (!c.automod) c.automod = {};
+        if (!Array.isArray(c.automod.badWords)) c.automod.badWords = [];
         if (i.option("remove")) c.automod.badWords = c.automod.badWords.filter((w) => w !== word);
         else if (!c.automod.badWords.includes(word)) c.automod.badWords.push(word);
       });
       return i.reply({ content: tr("commands.config.automodWords"), ephemeral: true });
     }
 
+    if (sub === "automod-domain") {
+      const domain = String(i.option("domain") || "")
+        .toLowerCase()
+        .trim()
+        .replace(/^https?:\/\//, "")
+        .replace(/\/.*$/, "")
+        .replace(/^www\./, "");
+      if (!domain || domain.includes(" ")) {
+        return i.reply({ content: tr("commands.config.automodDomainInvalid"), ephemeral: true });
+      }
+      updateGuild(i.serverId, (c) => {
+        if (!c.automod) c.automod = {};
+        if (!Array.isArray(c.automod.allowDomains)) c.automod.allowDomains = [];
+        if (i.option("remove")) {
+          c.automod.allowDomains = c.automod.allowDomains.filter((d) => d !== domain);
+        } else if (!c.automod.allowDomains.includes(domain)) {
+          c.automod.allowDomains.push(domain);
+        }
+      });
+      return i.reply({ content: tr("commands.config.automodDomain"), ephemeral: true });
+    }
+
     if (sub === "antiraid") {
       updateGuild(i.serverId, (c) => {
+        if (!c.antiraid) c.antiraid = {};
         c.antiraid.enabled = i.option("enabled");
         if (i.option("joins") != null) c.antiraid.joinThreshold = i.option("joins");
         if (i.option("window") != null) c.antiraid.joinWindowSec = i.option("window");
+        if (i.option("lock_seconds") != null) c.antiraid.lockSeconds = i.option("lock_seconds");
         if (i.option("action")) c.antiraid.action = i.option("action");
       });
       return i.reply({ content: tr("commands.config.antiraidSaved"), ephemeral: true });

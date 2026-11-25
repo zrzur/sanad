@@ -62,7 +62,12 @@ export class Registry {
       if (typeof def.build === "function") {
         builder = def.build(builder, (key) => t("en", key)) || builder;
       }
-      out.push(builder);
+      // The platform hides a command unless the member holds this exact bit.
+      // Administrator and the server owner do not carry Manage Server as its
+      // own bit, so the bot enforces the permission itself (actorHas).
+      const payload = typeof builder?.toJSON === "function" ? builder.toJSON() : builder;
+      if (payload && typeof payload === "object") delete payload.default_member_permissions;
+      out.push(payload);
     }
     return out;
   }

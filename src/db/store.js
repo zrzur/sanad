@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, writeFileSync, existsSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -63,22 +63,45 @@ export function defaultGuildConfig() {
     automod: {
       enabled: false,
       antiSpam: true,
+      antiDuplicate: true,
       antiLinks: false,
       antiInvites: true,
+      antiEmojiSpam: true,
+      antiZalgo: true,
+      antiNewlines: true,
+      antiMassMention: true,
+      antiAttachments: true,
+      bypassMods: true,
       maxMentions: 5,
       maxCapsPercent: 70,
       minCapsLength: 12,
+      maxEmojis: 12,
+      maxNewlines: 12,
+      maxAttachments: 6,
+      attachmentWindowMs: 10000,
+      spamCount: 6,
+      spamWindowMs: 7000,
+      duplicateCount: 4,
+      duplicateWindowMs: 12000,
       badWords: [],
+      allowDomains: [],
       ignoreRoles: [],
       ignoreChannels: [],
       action: "delete",
       timeoutSeconds: 300,
+      escalate: true,
+      strikeWindowMs: 600000,
+      strikeWarnAt: 2,
+      strikeTimeoutAt: 3,
+      alertDeleteMs: 8000,
+      quietAlerts: true,
     },
     antiraid: {
       enabled: false,
       joinThreshold: 8,
       joinWindowSec: 10,
       action: "lock",
+      lockSeconds: 120,
     },
     leveling: {
       enabled: true,
@@ -124,7 +147,13 @@ export function defaultGuildConfig() {
   };
 }
 
-const guilds = read("guilds", {});
+let guilds = read("guilds", {});
+let guildsMtime = 0;
+try {
+  guildsMtime = existsSync(pathFor("guilds")) ? statSync(pathFor("guilds")).mtimeMs : 0;
+} catch {
+  guildsMtime = 0;
+}
 const levels = read("levels", {});
 const casesDb = read("cases", {});
 const ticketsDb = read("tickets", {});
@@ -135,6 +164,43 @@ const starred = read("starboard", {});
 /** Debounced disk writes — many servers/users must not hammer the filesystem. */
 const dirty = new Map();
 const DEBOUNCE_MS = 400;
+
+/** Reload guilds.json when another process (web dashboard) wrote it. */
+export function reloadGuildsIfStale() {
+  const file = pathFor("guilds");
+  if (!existsSync(file)) return;
+  try {
+    const mtime = statSync(file).mtimeMs;
+    if (mtime <= guildsMtime) return;
+    if (dirty.has("guilds")) return;
+    guilds = read("guilds", {});
+    guildsMtime = mtime;
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Dashboard / cross-process write: flush, reload, mutate, write now. */
+export function syncUpdateGuild(serverId, mutator) {
+  if (dirty.has("guilds")) {
+    try {
+      write("guilds", dirty.get("guilds"));
+    } catch {
+      /* ignore */
+    }
+    dirty.delete("guilds");
+  }
+  guilds = read("guilds", {});
+  if (!guilds[serverId]) guilds[serverId] = defaultGuildConfig();
+  mutator(guilds[serverId]);
+  write("guilds", guilds);
+  try {
+    guildsMtime = statSync(pathFor("guilds")).mtimeMs;
+  } catch {
+    guildsMtime = Date.now();
+  }
+  return guilds[serverId];
+}
 
 function scheduleWrite(name, data) {
   dirty.set(name, data);
@@ -194,6 +260,7 @@ function saveStarred() {
 }
 
 export function getGuild(serverId) {
+  reloadGuildsIfStale();
   if (!guilds[serverId]) {
     guilds[serverId] = defaultGuildConfig();
     saveGuilds();
@@ -202,10 +269,16 @@ export function getGuild(serverId) {
 }
 
 export function updateGuild(serverId, mutator) {
+  reloadGuildsIfStale();
   const cfg = getGuild(serverId);
   mutator(cfg);
   saveGuilds();
   return cfg;
+}
+
+export function listKnownGuildIds() {
+  reloadGuildsIfStale();
+  return Object.keys(guilds);
 }
 
 export function getLevel(serverId, userId) {

@@ -22,6 +22,7 @@ import { getGuild, guildCounters, updateGuild } from "../db/store.js";
 import { baseEmbed, brandFooter } from "../util/format.js";
 import { guildT } from "../util/locale.js";
 import { postPanel } from "./panel.js";
+import { actorHas } from "../util/permissions.js";
 
 function onOff(tr, enabled) {
   return enabled ? tr("common.enabled") : tr("common.disabled");
@@ -129,6 +130,10 @@ export function dashboardButtons(tr, cfg) {
     ),
     new ActionRowBuilder().addComponents(
       new ButtonBuilder()
+        .setCustomId("sanad:dash:automod-panel")
+        .setLabel(tr("commands.dashboard.btnAutomodPanel").slice(0, 80))
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
         .setCustomId("sanad:dash:end")
         .setLabel(tr("commands.dashboard.btnEnd").slice(0, 80))
         .setStyle(ButtonStyle.Danger),
@@ -184,7 +189,7 @@ export function dashboardCommands() {
 export function registerDashboard(client) {
   client.command("dashboard", async (i) => {
     const { t: tr } = guildT(i.serverId, i.locale);
-    if (!i.has(Permissions.ManageServer)) {
+    if (!actorHas(i, Permissions.ManageServer)) {
       return i.reply({ content: tr("common.noPermission"), ephemeral: true });
     }
     await i.defer({ ephemeral: true });
@@ -194,7 +199,7 @@ export function registerDashboard(client) {
 
   const refresh = async (i) => {
     const { t: tr } = guildT(i.serverId, i.locale);
-    if (!i.has(Permissions.ManageServer)) {
+    if (!actorHas(i, Permissions.ManageServer)) {
       return i.reply({ content: tr("common.noPermission"), ephemeral: true });
     }
     const payload = await renderDashboard(client, i.serverId, tr);
@@ -210,7 +215,7 @@ export function registerDashboard(client) {
 
   client.component("sanad:dash:end", async (i) => {
     const { t: tr } = guildT(i.serverId, i.locale);
-    if (!i.has(Permissions.ManageServer)) {
+    if (!actorHas(i, Permissions.ManageServer)) {
       return i.reply({ content: tr("common.noPermission"), ephemeral: true });
     }
     const payload = {
@@ -231,7 +236,7 @@ export function registerDashboard(client) {
 
   client.component("sanad:dash:toggle:", async (i) => {
     const { t: tr } = guildT(i.serverId, i.locale);
-    if (!i.has(Permissions.ManageServer)) {
+    if (!actorHas(i, Permissions.ManageServer)) {
       return i.reply({ content: tr("common.noPermission"), ephemeral: true });
     }
     const key = String(i.customId || "").replace("sanad:dash:toggle:", "");
@@ -263,9 +268,24 @@ export function registerDashboard(client) {
     }
   });
 
+  client.component("sanad:dash:automod-panel", async (i) => {
+    const { t: tr } = guildT(i.serverId, i.locale);
+    if (!actorHas(i, Permissions.ManageServer)) {
+      return i.reply({ content: tr("common.noPermission"), ephemeral: true });
+    }
+    const { renderAutomodPanel } = await import("./automodPanel.js");
+    const payload = renderAutomodPanel(i.serverId, tr, "home");
+    try {
+      if (i.deferred || i.replied) return i.editReply(payload);
+      return i.update(payload);
+    } catch {
+      return i.reply({ ...payload, ephemeral: true });
+    }
+  });
+
   client.component("sanad:dash:post-panel", async (i) => {
     const { t: tr } = guildT(i.serverId, i.locale);
-    if (!i.has(Permissions.ManageServer)) {
+    if (!actorHas(i, Permissions.ManageServer)) {
       return i.reply({ content: tr("common.noPermission"), ephemeral: true });
     }
     await i.defer({ ephemeral: true });
@@ -280,7 +300,7 @@ export function registerDashboard(client) {
 
   client.component("sanad:dash:post-ticket", async (i) => {
     const { t: tr } = guildT(i.serverId, i.locale);
-    if (!i.has(Permissions.ManageServer)) {
+    if (!actorHas(i, Permissions.ManageServer)) {
       return i.reply({ content: tr("common.noPermission"), ephemeral: true });
     }
     await i.defer({ ephemeral: true });

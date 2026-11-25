@@ -13,6 +13,7 @@ import { EmbedBuilder, Permissions, SlashCommandBuilder } from "@zrzur/sdk/bot";
 import { BRAND } from "../brand.js";
 import { getGuild, updateGuild } from "../db/store.js";
 import { guildT } from "../util/locale.js";
+import { actorHas } from "../util/permissions.js";
 
 export function defaultPanelConfig() {
   return {
@@ -244,7 +245,7 @@ export function panelCommands() {
 export function registerPanel(client) {
   client.command("panel", async (i) => {
     const { t: tr } = guildT(i.serverId, i.locale);
-    if (!i.has(Permissions.ManageServer)) {
+    if (!actorHas(i, Permissions.ManageServer)) {
       return i.reply({ content: tr("common.noPermission"), ephemeral: true });
     }
 

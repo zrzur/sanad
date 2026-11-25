@@ -32,10 +32,12 @@ export function makeT(locale) {
 }
 
 export function resolveLocale(guildLocale, userLocale) {
-  const raw = (guildLocale || userLocale || config.defaultLocale || "ar").toLowerCase();
+  // Callers: util/locale.js guildT, core/context.js — guild language wins.
+  // Missing ids used to fall through to SANAD_LOCALE=ar and flip EN games to Arabic.
+  const raw = (guildLocale || userLocale || config.defaultLocale || "en").toLowerCase();
   if (raw.startsWith("ar")) return "ar";
   if (raw.startsWith("en")) return "en";
-  return catalogs[raw] ? raw : config.defaultLocale;
+  return catalogs[raw] ? raw : config.defaultLocale || "en";
 }
 
 export function commandLocalizations(path) {

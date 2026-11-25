@@ -19,6 +19,7 @@ import { config } from "../config.js";
 import { guildT } from "../util/locale.js";
 import { mentionUser, userId } from "../brand.js";
 import { getUserVoiceChannel } from "./voiceTracker.js";
+import { actorHas } from "../util/permissions.js";
 
 const require = createRequire(import.meta.url);
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -380,7 +381,7 @@ function shuffleInPlace(arr) {
 
 function canControlMusic(client, i, session) {
   try {
-    if (typeof i.has === "function" && i.has(Permissions.ManageMessages)) return true;
+    if (actorHas(i, Permissions.ManageMessages)) return true;
   } catch {
     /* ignore */
   }

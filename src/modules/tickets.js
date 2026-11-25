@@ -17,6 +17,7 @@ import {
 import { BRAND, mentionRole, mentionUser, userId } from "../brand.js";
 import { t } from "../core/i18n.js";
 import { registry } from "../core/registry.js";
+import { actorHas } from "../util/permissions.js";
 import {
   findTicketServerByChannel,
   getGuild,
@@ -54,9 +55,9 @@ function defaultTopics(locale) {
 function isStaff(i, cfg) {
   const role = cfg.tickets.staffRoleId || cfg.staffRoleId;
   if (role) {
-    return Boolean(i.member?.roles?.includes(role)) || i.has(Permissions.ManageServer);
+    return Boolean(i.member?.roles?.includes(role)) || actorHas(i, Permissions.ManageServer);
   }
-  return i.has(Permissions.ManageMessages) || i.has(Permissions.ManageChannel);
+  return actorHas(i, Permissions.ManageMessages) || actorHas(i, Permissions.ManageChannel);
 }
 
 function isOwner(i, ticket) {
@@ -495,7 +496,7 @@ export function registerTickets(client) {
     }
 
     if (i.subcommand === "panel") {
-      if (!i.has(Permissions.ManageChannel)) {
+      if (!actorHas(i, Permissions.ManageChannel)) {
         return i.reply({ content: tr("common.noPermission"), ephemeral: true });
       }
       await postTicketOpenPanel(client, i.channelId, tr);
@@ -1173,7 +1174,7 @@ async function claimTicket(client, i, fromButton) {
   if (!isStaff(i, cfg)) return i.reply({ content: tr("commands.ticket.staffOnly"), ephemeral: true });
   const me = userId(i.user);
   if (ticket.claimedBy && ticket.claimedBy !== me) {
-    if (!i.has(Permissions.ManageServer)) {
+    if (!actorHas(i, Permissions.ManageServer)) {
       return i.reply({
         content: tr("commands.ticket.alreadyClaimed", { user: mentionUser(ticket.claimedBy) }),
         ephemeral: true,

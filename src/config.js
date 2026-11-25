@@ -7,7 +7,8 @@ export const config = {
   root,
   dataDir: join(root, "data"),
   defaultPrefix: process.env.SANAD_PREFIX || "!",
-  defaultLocale: process.env.SANAD_LOCALE || "ar",
+  // Fallback when a guild has no locale yet — must not force Arabic over EN servers.
+  defaultLocale: process.env.SANAD_LOCALE || "en",
   ownerIds: (process.env.SANAD_OWNER_IDS || "")
     .split(",")
     .map((s) => s.trim())

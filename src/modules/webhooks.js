@@ -28,6 +28,7 @@ import {
   saveWebhookSecret,
 } from "../db/store.js";
 import { guildT } from "../util/locale.js";
+import { actorHas } from "../util/permissions.js";
 
 const MANAGE = Permissions.ManageWebhooks;
 
@@ -54,7 +55,7 @@ async function requireManage(i, tr) {
     await i.reply({ content: tr("common.guildOnly"), ephemeral: true });
     return false;
   }
-  if (!i.has(MANAGE)) {
+  if (!actorHas(i, MANAGE)) {
     await i.reply({ content: tr("commands.webhook.needPerm"), ephemeral: true });
     return false;
   }

@@ -88,13 +88,9 @@ function prune() {
 
 loadGames();
 
-function gameEmbed(tr, title, description, colour = BRAND.colour.primary) {
-  return new EmbedBuilder()
-    .title(title)
-    .description(description)
-    .colour(colour)
-    .footer(tr("commands.game.footer"))
-    .timestamp();
+/** Minimal game embeds — title + short body only (no footer/timestamp clutter). */
+function gameEmbed(_tr, title, description, colour = BRAND.colour.primary) {
+  return new EmbedBuilder().title(title).description(description).colour(colour);
 }
 
 /* ─── Tic-Tac-Toe (XO) ─────────────────────────────────────────── */
@@ -153,23 +149,19 @@ function xoButtons(gameId, board, ended, winLine = null) {
       const i = r * 3 + c;
       const cell = board[i];
       const inWin = winLine?.includes(i);
-      // Empty = blue (clickable). X = green. O = red. Win line stays green.
-      let style = ButtonStyle.Primary;
-      let label = "·";
-      if (cell === "X") {
-        label = "X";
-        style = ButtonStyle.Success;
-      } else if (cell === "O") {
-        label = "O";
-        style = ButtonStyle.Danger;
-      }
+      // X = blue, O = red, win = green, empty = gray with a dot (keeps button width stable)
+      let style = ButtonStyle.Secondary;
+      if (cell === "X") style = ButtonStyle.Primary;
+      else if (cell === "O") style = ButtonStyle.Danger;
       if (inWin) style = ButtonStyle.Success;
+      // X / O / · — same padded text length so tiles stay even
+      const label = cell === "X" ? "X" : cell === "O" ? "O" : "·";
       row.addComponents(
         new ButtonBuilder()
           .setCustomId(`sanad:xo:${gameId}:${i}`)
           .setLabel(label)
           .setStyle(style)
-          .setDisabled(ended || Boolean(cell)),
+          .setDisabled(ended && !cell),
       );
     }
     rows.push(row);
@@ -217,22 +209,78 @@ function xoStatus(tr, game) {
 function xoPayload(tr, game) {
   const ended = Boolean(xoWinner(game.board)) || game.ended;
   const winLine = ended ? xoWinLine(game.board) : null;
-  const vs = game.vsBot
-    ? tr("commands.game.xo.vsBot")
-    : tr("commands.game.xo.vsPlayer", {
-        x: mentionUser(game.x),
-        o: mentionUser(game.o),
-      });
   return {
     embeds: [
       gameEmbed(
         tr,
         tr("commands.game.xo.title"),
-        `${vs}\n\n${xoStatus(tr, game)}`,
+        xoStatus(tr, game),
         ended ? BRAND.colour.success : BRAND.colour.ticket,
       ),
     ],
     components: xoButtons(game.id, game.board, ended || game.ended, winLine),
+  };
+}
+
+/* ─── Memory match ─────────────────────────────────────────────── */
+
+const MEMORY_PAIRS = ["🍎", "🍋", "🍇", "🍒", "🍑", "🥝"];
+const MEMORY_SIZE = MEMORY_PAIRS.length * 2; // 12 → 3×4
+const MEMORY_COLS = 4;
+const MEMORY_ROWS = 3;
+
+function memoryShuffle() {
+  const deck = [...MEMORY_PAIRS, ...MEMORY_PAIRS];
+  for (let i = deck.length - 1; i > 0; i--) {
+    const j = (Math.random() * (i + 1)) | 0;
+    [deck[i], deck[j]] = [deck[j], deck[i]];
+  }
+  return deck;
+}
+
+function memoryFlags() {
+  return Array(MEMORY_SIZE).fill(false);
+}
+
+function memoryButtons(game) {
+  const rows = [];
+  // Labels only (no square emojis). Closed = · · open = fruit character.
+  for (let r = 0; r < MEMORY_ROWS; r++) {
+    const row = new ActionRowBuilder();
+    for (let c = 0; c < MEMORY_COLS; c++) {
+      const i = r * MEMORY_COLS + c;
+      const open = game.matched[i] || game.flipped[i] || game.first === i;
+      let style = ButtonStyle.Secondary;
+      if (game.matched[i]) style = ButtonStyle.Success;
+      else if (open) style = ButtonStyle.Primary;
+      row.addComponents(
+        new ButtonBuilder()
+          .setCustomId(`sanad:mem:${game.id}:${i}`)
+          .setLabel(open ? game.deck[i] : "·")
+          .setStyle(style)
+          .setDisabled(Boolean(game.matched[i]) || game.ended),
+      );
+    }
+    rows.push(row);
+  }
+  return rows;
+}
+
+function memoryPayload(tr, game) {
+  const done = game.matched.filter(Boolean).length / 2;
+  const body = game.ended
+    ? tr("commands.game.memory.done", { moves: game.moves })
+    : tr("commands.game.memory.progress", { done, total: MEMORY_PAIRS.length });
+  return {
+    embeds: [
+      gameEmbed(
+        tr,
+        tr("commands.game.memory.title"),
+        body,
+        game.ended ? BRAND.colour.success : BRAND.colour.ticket,
+      ),
+    ],
+    components: memoryButtons(game),
   };
 }
 
@@ -394,6 +442,7 @@ export function gameCommands() {
           descriptions: { ar: t("ar", "commands.game.options.opponent") },
         }),
       )
+      .subcommand("memory", t("en", "commands.game.memory.description"))
       .subcommand("list", t("en", "commands.game.listDescription")),
     new SlashCommandBuilder("xo", t("en", "commands.game.xo.description"))
       .describe({
@@ -403,6 +452,10 @@ export function gameCommands() {
       .user("opponent", t("en", "commands.game.options.opponent"), {
         descriptions: { ar: t("ar", "commands.game.options.opponent") },
       }),
+    new SlashCommandBuilder("memory", t("en", "commands.game.memory.description")).describe({
+      en: t("en", "commands.game.memory.description"),
+      ar: t("ar", "commands.game.memory.description"),
+    }),
   ];
 }
 
@@ -489,6 +542,25 @@ export function registerGames(client) {
     }
 
     if (sub === "xo") return startXo(i, i.option("opponent"));
+
+    if (sub === "memory") {
+      const id = newId();
+      const game = {
+        id,
+        type: "memory",
+        userId: userId(i.user),
+        deck: memoryShuffle(),
+        matched: memoryFlags(),
+        flipped: memoryFlags(),
+        first: null,
+        moves: 0,
+        ended: false,
+        expires: Date.now() + TTL_MS,
+      };
+      games.set(id, game);
+      persistGames();
+      return i.reply(memoryPayload(tr, game));
+    }
 
     if (sub === "rps") {
       const id = newId();
@@ -598,6 +670,78 @@ export function registerGames(client) {
   });
 
   client.command("xo", (i) => startXo(i, i.option("opponent")));
+  client.command("memory", async (i) => {
+    const { t: tr } = guildT(i.serverId, i.locale);
+    prune();
+    const id = newId();
+    const game = {
+      id,
+      type: "memory",
+      userId: userId(i.user),
+      deck: memoryShuffle(),
+      matched: memoryFlags(),
+      flipped: memoryFlags(),
+      first: null,
+      moves: 0,
+      ended: false,
+      expires: Date.now() + TTL_MS,
+    };
+    games.set(id, game);
+    persistGames();
+    return i.reply(memoryPayload(tr, game));
+  });
+
+  /* Memory components */
+  client.component(/^sanad:mem:[a-f0-9]+:\d+$/, async (i) => {
+    const { t: tr } = guildT(i.serverId, i.locale);
+    const parts = String(i.customId).split(":");
+    const id = parts[2];
+    const idx = Number(parts[3]);
+    const game = games.get(id);
+    if (!game || game.type !== "memory") {
+      return i.reply({ content: tr("commands.game.expired"), ephemeral: true });
+    }
+    if (userId(i.user) !== game.userId) {
+      return i.reply({ content: tr("commands.game.notYours"), ephemeral: true });
+    }
+    if (game.ended || game.matched[idx]) {
+      return i.reply({ content: tr("commands.game.ended"), ephemeral: true });
+    }
+    touch(game);
+
+    // Hide a previous mismatch before opening a new card
+    if (game.first == null && game.flipped.some(Boolean)) {
+      game.flipped = memoryFlags();
+    }
+
+    if (game.first === idx) return i.update(memoryPayload(tr, game));
+
+    if (game.first == null) {
+      game.first = idx;
+      game.flipped[idx] = true;
+      return i.update(memoryPayload(tr, game));
+    }
+
+    const a = game.first;
+    const b = idx;
+    game.flipped[b] = true;
+    game.moves += 1;
+    game.first = null;
+
+    if (game.deck[a] === game.deck[b]) {
+      game.matched[a] = true;
+      game.matched[b] = true;
+      game.flipped[a] = false;
+      game.flipped[b] = false;
+      if (game.matched.every(Boolean)) {
+        game.ended = true;
+        games.delete(id);
+        persistGames();
+      }
+    }
+    // On mismatch: leave both flipped until next pick (handler clears above)
+    return i.update(memoryPayload(tr, game));
+  });
 
   /* XO components */
   client.component(/^sanad:xo:[a-f0-9]+:(accept|decline|\d)$/, async (i) => {
@@ -893,6 +1037,31 @@ export function registerGames(client) {
         });
       }
       return ctx.reply(ctx.t("commands.game.prefixHint", { prefix: ctx.prefix || "!" }));
+    },
+  });
+
+  registry.register({
+    name: "memory",
+    slash: false,
+    aliases: ["mem", "ذاكرة"],
+    async execute(ctx) {
+      prune();
+      const id = newId();
+      const game = {
+        id,
+        type: "memory",
+        userId: ctx.userId,
+        deck: memoryShuffle(),
+        matched: memoryFlags(),
+        flipped: memoryFlags(),
+        first: null,
+        moves: 0,
+        ended: false,
+        expires: Date.now() + TTL_MS,
+      };
+      games.set(id, game);
+      persistGames();
+      return ctx.reply(memoryPayload(ctx.t, game));
     },
   });
 

@@ -1,5 +1,6 @@
 import { config } from "../config.js";
 import { getGuild } from "../db/store.js";
+import { actorHas } from "../util/permissions.js";
 import { makeT, resolveLocale } from "./i18n.js";
 
 export function userId(user) {
@@ -57,7 +58,7 @@ export function fromInteraction(client, interaction, extras = {}) {
         if (error?.type !== "InteractionAlreadyAcknowledged") throw error;
       }
     },
-    has: (perm) => interaction.has(perm),
+    has: (perm) => actorHas(interaction, perm),
     ...extras,
   };
 }
