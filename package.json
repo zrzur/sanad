@@ -1,6 +1,6 @@
 {
   "name": "sanad",
-  "version": "1.0.0",
+  "version": "26.3.0",
   "description": "Sanad (سند) — official open-source Zrzur server bot: moderation, tickets, music, leveling, i18n",
   "type": "module",
   "main": "src/index.js",
@@ -34,7 +34,7 @@
   "license": "MIT",
   "dependencies": {
     "@livekit/rtc-node": "^1.2.3",
-    "@zrzur/sdk": "^2.0.0",
+    "@zrzur/sdk": "^2.1.0",
     "dotenv": "^16.4.7",
     "ffmpeg-static": "^5.3.0"
   },
